@@ -9,8 +9,6 @@
     "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/index.ts",
     "test": "cross-env NODE_ENV=test jest --verbose",
     "test:watch": "cross-env NODE_ENV=test jest --watch",
-    "test:docker": "cross-env NODE_ENV=test jest",
-    "test:env": "cross-env NODE_ENV=test jest --verbose",
     "test:debug": "cross-env NODE_ENV=test jest --detectOpenHandles --forceExit",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
@@ -26,8 +24,7 @@
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
     "docker:reset": "docker-compose down -v && docker-compose up -d",
-    "setup:dev": "npm run docker:up && npm run db:push:dev",
-    "setup:test": "npm run docker:up && npm run db:push:test"
+    "setup:test": "npm run docker:up && npm run db:generate"
   },
   "keywords": [
     "blog",
