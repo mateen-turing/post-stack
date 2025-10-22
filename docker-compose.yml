@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # Development Database
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: blog-postgres-dev
+    environment:
+      POSTGRES_DB: blog_dev
+      POSTGRES_USER: blog_user
+      POSTGRES_PASSWORD: blog_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-dev.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - blog-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blog_user -d blog_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Test Database
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: blog-postgres-test
+    environment:
+      POSTGRES_DB: blog_test
+      POSTGRES_USER: blog_user
+      POSTGRES_PASSWORD: blog_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-test.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - blog-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blog_user -d blog_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: blog-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - blog-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  postgres_test_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  blog-network:
+    driver: bridge

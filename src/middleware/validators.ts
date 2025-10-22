@@ -1,0 +1,39 @@
+import { body } from 'express-validator';
+
+export const validateSignup = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('username')
+    .isLength({ min: 3, max: 30 })
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage('Username must be 3-30 characters and contain only letters, numbers, and underscores'),
+  body('password')
+    .isLength({ min: 8 })
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must be at least 8 characters with uppercase, lowercase, and number'),
+];
+
+export const validateLogin = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('password')
+    .notEmpty()
+    .withMessage('Password is required'),
+];
+
+export const validatePost = [
+  body('title')
+    .isLength({ min: 1, max: 200 })
+    .withMessage('Title must be between 1 and 200 characters'),
+  body('content')
+    .isLength({ min: 1 })
+    .withMessage('Content is required'),
+  body('published')
+    .optional()
+    .isBoolean()
+    .withMessage('Published must be a boolean'),
+];
