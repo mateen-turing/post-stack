@@ -23,6 +23,13 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
           username: true,
         },
       },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
     },
     orderBy: { createdAt: 'desc' },
     skip,
@@ -65,6 +72,13 @@ router.get('/my-posts', authenticateToken, asyncHandler(async (req: AuthRequest,
           username: true,
         },
       },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
     },
     orderBy: { createdAt: 'desc' },
     skip,
@@ -99,6 +113,13 @@ router.get('/:slug', asyncHandler(async (req: AuthRequest, res: Response) => {
           username: true,
         },
       },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
     },
   });
 
@@ -130,6 +151,13 @@ router.get('/drafts/:slug', authenticateToken, asyncHandler(async (req: AuthRequ
           username: true,
         },
       },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
     },
   });
 
@@ -156,7 +184,7 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
     });
   }
 
-  const { title, content, published = false } = req.body;
+  const { title, content, published = false, categoryId } = req.body;
   const slug = generateSlug(title);
 
   // Check if slug already exists
@@ -177,12 +205,20 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
       slug,
       published,
       authorId: req.user.id,
+      categoryId,
     },
     include: {
       author: {
         select: {
           id: true,
           username: true,
+        },
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
         },
       },
     },
@@ -203,7 +239,7 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
   }
 
   const { id } = req.params;
-  const { title, content, published } = req.body;
+  const { title, content, published, categoryId } = req.body;
 
   // Check if post exists and user owns it
   const existingPost = await prisma.post.findUnique({
@@ -246,12 +282,20 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
       content,
       slug,
       published,
+      categoryId,
     },
     include: {
       author: {
         select: {
           id: true,
           username: true,
+        },
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
         },
       },
     },
