@@ -5,18 +5,20 @@ import authRoutes from './routes/auth';
 import postRoutes from './routes/posts';
 import { authenticateToken } from './utils/auth';
 import { errorHandler } from './middleware/validation';
+import globalRateLimit from './middleware/rateLimit';
 
 const app = express();
-
 const PORT = process.env.PORT || 3000;
 
 app.use(helmet());
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_URL
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.FRONTEND_URL 
     : ['http://localhost:3000', 'http://localhost:3001'],
   credentials: true,
 }));
+
+app.use(globalRateLimit);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
