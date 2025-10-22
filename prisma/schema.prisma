@@ -20,15 +20,28 @@ model User {
 }
 
 model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String
-  slug      String   @unique
-  published Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  authorId  String
-  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  title      String
+  content    String
+  slug       String   @unique
+  published  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  authorId   String
+  categoryId String?
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   @@map("posts")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  posts     Post[]
+
+  @@map("categories")
 }
