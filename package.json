@@ -1,5 +1,5 @@
 {
-  "name": "blog-backend",
+  "name": "post-stack",
   "version": "1.0.0",
   "description": "A blog backend API with authentication and markdown blog posts",
   "main": "dist/index.js",
