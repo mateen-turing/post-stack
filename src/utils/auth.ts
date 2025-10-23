@@ -66,5 +66,6 @@ export const generateSlug = (title: string): string => {
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
+    .replace(/[^a-z0-9 -]/g, '')
     .trim();
 };
