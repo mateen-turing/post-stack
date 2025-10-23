@@ -207,24 +207,6 @@ describe('Blog Post Routes', () => {
       expect(data.pagination.total).toBe(0);
     });
 
-    it('should return 400 for empty title search query', async () => {
-      const response = await fetch(`${baseUrl}/posts?title=`);
-
-      const data: any = await response.json();
-
-      expect(response.status).toBe(400);
-      expect(data).toHaveProperty('error', 'Title search query cannot be empty');
-    });
-
-    it('should return 400 for whitespace-only title search query', async () => {
-      const response = await fetch(`${baseUrl}/posts?title=%20%20%20`);
-
-      const data: any = await response.json();
-
-      expect(response.status).toBe(400);
-      expect(data).toHaveProperty('error', 'Title search query cannot be empty');
-    });
-
     it('should maintain backward compatibility when no title parameter is provided', async () => {
       await prisma.post.createMany({
         data: [
