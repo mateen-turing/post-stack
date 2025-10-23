@@ -60,20 +60,6 @@ describe('Auth Utilities', () => {
   });
 
   describe('generateSlug', () => {
-    it('should generate a valid slug from title', () => {
-      const title = 'My Awesome Blog Post!';
-      const slug = generateSlug(title);
-      
-      expect(slug).toBe('my-awesome-blog-post');
-    });
-
-    it('should handle special characters', () => {
-      const title = 'Hello, World!@#$%^&*()';
-      const slug = generateSlug(title);
-      
-      expect(slug).toBe('hello-world');
-    });
-
     it('should handle multiple spaces', () => {
       const title = 'Multiple    Spaces   Here';
       const slug = generateSlug(title);

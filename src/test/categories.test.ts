@@ -9,7 +9,7 @@ describe('Categories API', () => {
   let categoryId: string;
 
   beforeEach(async () => {
-    // Create a test user
+
     const hashedPassword = await bcrypt.hash('Password123', 12);
     const user = await prisma.user.create({
       data: {

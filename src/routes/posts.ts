@@ -8,7 +8,6 @@ import { AuthRequest } from '../utils/auth';
 const router = Router();
 const prisma = new PrismaClient();
 
-// Get all published posts (public)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
