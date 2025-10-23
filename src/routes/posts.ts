@@ -12,10 +12,25 @@ const prisma = new PrismaClient();
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
+  const titleQuery = req.query.title as string;
   const skip = (page - 1) * limit;
 
+  if (titleQuery !== undefined && (!titleQuery || titleQuery.trim().length === 0)) {
+    return res.status(400).json({
+      error: 'Title search query cannot be empty',
+    });
+  }
+
+  const whereClause: any = { published: true };
+  if (titleQuery && titleQuery.trim()) {
+    whereClause.title = {
+      contains: titleQuery.trim(),
+      mode: 'insensitive'
+    };
+  }
+
   const posts = await prisma.post.findMany({
-    where: { published: true },
+    where: whereClause,
     include: {
       author: {
         select: {
@@ -37,7 +52,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   });
 
   const total = await prisma.post.count({
-    where: { published: true },
+    where: whereClause,
   });
 
   return res.json({

@@ -84,6 +84,199 @@ describe('Blog Post Routes', () => {
       expect(data.pagination.limit).toBe(5);
       expect(data.posts).toHaveLength(5);
     });
+
+    it('should search posts by title', async () => {
+      // Create test posts with various titles
+      await prisma.post.createMany({
+        data: [
+          {
+            title: 'JavaScript Tutorial',
+            content: '# JavaScript Content',
+            slug: 'javascript-tutorial',
+            published: true,
+            authorId: userId,
+          },
+          {
+            title: 'Advanced JavaScript Concepts',
+            content: '# Advanced Content',
+            slug: 'advanced-javascript',
+            published: true,
+            authorId: userId,
+          },
+          {
+            title: 'Python for Beginners',
+            content: '# Python Content',
+            slug: 'python-beginners',
+            published: true,
+            authorId: userId,
+          },
+          {
+            title: 'JavaScript vs Python',
+            content: '# Comparison Content',
+            slug: 'javascript-vs-python',
+            published: true,
+            authorId: userId,
+          },
+          {
+            title: 'React Development Guide',
+            content: '# React Content',
+            slug: 'react-guide',
+            published: true,
+            authorId: userId,
+          },
+        ],
+      });
+
+      const response = await fetch(`${baseUrl}/posts?title=JavaScript`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('posts');
+      expect(data).toHaveProperty('pagination');
+      expect(data.posts).toHaveLength(3); // Should find 3 posts with "JavaScript" in title
+      expect(data.posts.every((post: any) => post.title.toLowerCase().includes('javascript'))).toBe(true);
+    });
+
+    it('should perform case-insensitive search', async () => {
+      await prisma.post.create({
+        data: {
+          title: 'JavaScript Tutorial',
+          content: '# JavaScript Content',
+          slug: 'javascript-tutorial',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts?title=JAVASCRIPT`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts).toHaveLength(1);
+      expect(data.posts[0].title).toBe('JavaScript Tutorial');
+    });
+
+    it('should support partial matching', async () => {
+      await prisma.post.createMany({
+        data: [
+          {
+            title: 'JavaScript Tutorial',
+            content: '# JavaScript Content',
+            slug: 'javascript-tutorial',
+            published: true,
+            authorId: userId,
+          },
+          {
+            title: 'Advanced JavaScript Concepts',
+            content: '# Advanced Content',
+            slug: 'advanced-javascript',
+            published: true,
+            authorId: userId,
+          },
+        ],
+      });
+
+      const response = await fetch(`${baseUrl}/posts?title=Tutorial`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts).toHaveLength(1);
+      expect(data.posts[0].title).toBe('JavaScript Tutorial');
+    });
+
+    it('should return empty results for non-matching search', async () => {
+      await prisma.post.create({
+        data: {
+          title: 'JavaScript Tutorial',
+          content: '# JavaScript Content',
+          slug: 'javascript-tutorial',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts?title=NonExistent`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts).toHaveLength(0);
+      expect(data.pagination.total).toBe(0);
+    });
+
+    it('should return 400 for empty title search query', async () => {
+      const response = await fetch(`${baseUrl}/posts?title=`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'Title search query cannot be empty');
+    });
+
+    it('should return 400 for whitespace-only title search query', async () => {
+      const response = await fetch(`${baseUrl}/posts?title=%20%20%20`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'Title search query cannot be empty');
+    });
+
+    it('should maintain backward compatibility when no title parameter is provided', async () => {
+      await prisma.post.createMany({
+        data: [
+          {
+            title: 'JavaScript Tutorial',
+            content: '# JavaScript Content',
+            slug: 'javascript-tutorial',
+            published: true,
+            authorId: userId,
+          },
+          {
+            title: 'Python Guide',
+            content: '# Python Content',
+            slug: 'python-guide',
+            published: true,
+            authorId: userId,
+          },
+        ],
+      });
+
+      const response = await fetch(`${baseUrl}/posts`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts).toHaveLength(2); // Should return all posts
+      expect(data.pagination.total).toBe(2);
+    });
+
+    it('should work with pagination and search together', async () => {
+      // Create multiple posts with similar titles
+      const posts = Array.from({ length: 15 }, (_, i) => ({
+        title: `JavaScript Post ${i + 1}`,
+        content: `# JavaScript Content ${i + 1}`,
+        slug: `javascript-post-${i + 1}`,
+        published: true,
+        authorId: userId,
+      }));
+
+      await prisma.post.createMany({ data: posts });
+
+      const response = await fetch(`${baseUrl}/posts?title=JavaScript&page=2&limit=5`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.pagination.page).toBe(2);
+      expect(data.pagination.limit).toBe(5);
+      expect(data.posts).toHaveLength(5);
+      expect(data.pagination.total).toBe(15);
+      expect(data.posts.every((post: any) => post.title.toLowerCase().includes('javascript'))).toBe(true);
+    });
   });
 
   describe('GET /api/posts/:slug', () => {
