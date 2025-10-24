@@ -198,7 +198,7 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
     });
   }
 
-  const { title, content, published = false, categoryId } = req.body;
+  const { title, content, published = false, categoryId, metaTitle, metaDescription, ogImage } = req.body;
   const slug = generateSlug(title);
 
   // Check if slug already exists
@@ -220,6 +220,9 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
       published,
       authorId: req.user.id,
       categoryId,
+      metaTitle,
+      metaDescription,
+      ogImage,
     },
     include: {
       author: {
@@ -253,7 +256,7 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
   }
 
   const { id } = req.params;
-  const { title, content, published, categoryId } = req.body;
+  const { title, content, published, categoryId, metaTitle, metaDescription, ogImage } = req.body;
 
   // Check if post exists and user owns it
   const existingPost = await prisma.post.findUnique({
@@ -297,6 +300,9 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
       slug,
       published,
       categoryId,
+      metaTitle,
+      metaDescription,
+      ogImage,
     },
     include: {
       author: {

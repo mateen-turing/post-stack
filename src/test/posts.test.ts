@@ -283,6 +283,31 @@ describe('Blog Post Routes', () => {
       expect(data.post.published).toBe(true);
     });
 
+    it('should return post with SEO metadata', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'SEO Test Post',
+          content: '# SEO Test Content',
+          slug: 'seo-test-post',
+          published: true,
+          authorId: userId,
+          metaTitle: 'Custom SEO Title',
+          metaDescription: 'Custom meta description for SEO',
+          ogImage: 'https://example.com/seo-image.jpg',
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/seo-test-post`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('post');
+      expect(data.post.metaTitle).toBe('Custom SEO Title');
+      expect(data.post.metaDescription).toBe('Custom meta description for SEO');
+      expect(data.post.ogImage).toBe('https://example.com/seo-image.jpg');
+    });
+
     it('should return 404 for non-existent post', async () => {
       const response = await fetch(`${baseUrl}/posts/non-existent`);
 
@@ -443,6 +468,159 @@ describe('Blog Post Routes', () => {
       expect(response.status).toBe(400);
       expect(data).toHaveProperty('error', 'A post with this title already exists');
     });
+
+    it('should create post with SEO metadata', async () => {
+      const postData = {
+        title: 'SEO Test Post',
+        content: '# SEO Test Content',
+        published: false,
+        metaTitle: 'Custom SEO Title',
+        metaDescription: 'This is a custom meta description for SEO purposes',
+        ogImage: 'https://example.com/image.jpg',
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Post created successfully');
+      expect(data).toHaveProperty('post');
+      expect(data.post.metaTitle).toBe(postData.metaTitle);
+      expect(data.post.metaDescription).toBe(postData.metaDescription);
+      expect(data.post.ogImage).toBe(postData.ogImage);
+
+      // Verify post was created in database
+      const post = await prisma.post.findUnique({
+        where: { slug: 'seo-test-post' },
+      });
+      expect(post).toBeTruthy();
+      expect(post?.metaTitle).toBe(postData.metaTitle);
+      expect(post?.metaDescription).toBe(postData.metaDescription);
+      expect(post?.ogImage).toBe(postData.ogImage);
+    });
+
+    it('should create post without SEO metadata (backward compatibility)', async () => {
+      const postData = {
+        title: 'Backward Compatible Post',
+        content: '# Backward Compatible Content',
+        published: false,
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Post created successfully');
+      expect(data).toHaveProperty('post');
+      expect(data.post.metaTitle).toBeNull();
+      expect(data.post.metaDescription).toBeNull();
+      expect(data.post.ogImage).toBeNull();
+    });
+
+    it('should validate meta title length', async () => {
+      const postData = {
+        title: 'Validation Test Post',
+        content: '# Validation Test Content',
+        metaTitle: 'This is a very long meta title that exceeds the 60 character limit and should fail validation',
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'Validation failed');
+    });
+
+    it('should validate meta description length', async () => {
+      const postData = {
+        title: 'Validation Test Post',
+        content: '# Validation Test Content',
+        metaDescription: 'This is a very long meta description that exceeds the 160 character limit and should fail validation because it is too long for search engines to display properly in search results',
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'Validation failed');
+    });
+
+    it('should validate ogImage URL format', async () => {
+      const postData = {
+        title: 'Validation Test Post',
+        content: '# Validation Test Content',
+        ogImage: 'not-a-valid-url',
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'Validation failed');
+    });
+
+    it('should accept valid ogImage URL', async () => {
+      const postData = {
+        title: 'Valid URL Test Post',
+        content: '# Valid URL Test Content',
+        ogImage: 'https://example.com/valid-image.jpg',
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Post created successfully');
+      expect(data.post.ogImage).toBe(postData.ogImage);
+    });
   });
 
   describe('PUT /api/posts/:id', () => {
@@ -551,6 +729,129 @@ describe('Blog Post Routes', () => {
 
       expect(response.status).toBe(404);
       expect(data).toHaveProperty('error', 'Post not found');
+    });
+
+    it('should update post with SEO metadata', async () => {
+      // First create a post
+      const post = await prisma.post.create({
+        data: {
+          title: 'Original Post',
+          content: '# Original Content',
+          slug: 'original-post',
+          published: false,
+          authorId: userId,
+        },
+      });
+
+      const updateData = {
+        title: 'Updated Post with SEO',
+        content: '# Updated Content',
+        published: true,
+        metaTitle: 'Updated SEO Title',
+        metaDescription: 'Updated meta description for better SEO',
+        ogImage: 'https://example.com/updated-image.jpg',
+      };
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('message', 'Post updated successfully');
+      expect(data).toHaveProperty('post');
+      expect(data.post.metaTitle).toBe(updateData.metaTitle);
+      expect(data.post.metaDescription).toBe(updateData.metaDescription);
+      expect(data.post.ogImage).toBe(updateData.ogImage);
+
+      // Verify post was updated in database
+      const updatedPost = await prisma.post.findUnique({
+        where: { id: post.id },
+      });
+      expect(updatedPost?.metaTitle).toBe(updateData.metaTitle);
+      expect(updatedPost?.metaDescription).toBe(updateData.metaDescription);
+      expect(updatedPost?.ogImage).toBe(updateData.ogImage);
+    });
+
+    it('should update post and clear SEO metadata', async () => {
+      // First create a post with SEO metadata
+      const post = await prisma.post.create({
+        data: {
+          title: 'Post with SEO',
+          content: '# Content with SEO',
+          slug: 'post-with-seo',
+          published: false,
+          authorId: userId,
+          metaTitle: 'Original SEO Title',
+          metaDescription: 'Original meta description',
+          ogImage: 'https://example.com/original-image.jpg',
+        },
+      });
+
+      const updateData = {
+        title: 'Updated Post without SEO',
+        content: '# Updated Content',
+        published: true,
+        metaTitle: null,
+        metaDescription: null,
+        ogImage: null,
+      };
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('message', 'Post updated successfully');
+      expect(data).toHaveProperty('post');
+      expect(data.post.metaTitle).toBeNull();
+      expect(data.post.metaDescription).toBeNull();
+      expect(data.post.ogImage).toBeNull();
+    });
+
+    it('should validate SEO fields on update', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post',
+          published: false,
+          authorId: userId,
+        },
+      });
+
+      const updateData = {
+        title: 'Updated Post',
+        content: '# Updated Content',
+        metaTitle: 'This is a very long meta title that exceeds the 60 character limit and should fail validation',
+      };
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'Validation failed');
     });
   });
 
