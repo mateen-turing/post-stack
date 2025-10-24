@@ -814,8 +814,6 @@ describe('Blog Post Routes', () => {
 
       const data: any = await response.json();
 
-      console.log(data, 'dd')
-
       expect(response.status).toBe(200);
       expect(data).toHaveProperty('message', 'Post updated successfully');
       expect(data).toHaveProperty('post');
