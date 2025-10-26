@@ -264,19 +264,24 @@ describe('Categories API', () => {
     let postId: string;
 
     beforeEach(async () => {
-      // Create a test post with category
-      const post = await prisma.post.create({
-        data: {
+      // Create a test post with category using the API endpoint
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
           title: 'Test Post for Listing',
           content: 'This is a test post for listing',
-          slug: 'test-post-for-listing',
           published: true,
-          authorId: userId,
           categoryId: categoryId,
-        },
+        }),
       });
-      
-      postId = post.id;
+
+      const data: any = await response.json();
+      expect(response.status).toBe(201);
+      postId = data.post.id;
     });
 
     it('should include category info in post listings', async () => {
