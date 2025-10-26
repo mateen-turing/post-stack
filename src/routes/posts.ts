@@ -4,11 +4,13 @@ import { authenticateToken, generateSlug } from '../utils/auth';
 import { validatePost } from '../middleware/validators';
 import { handleValidationErrors, asyncHandler } from '../middleware/validation';
 import { AuthRequest } from '../utils/auth';
+import { cacheMiddleware, invalidateCache } from '../middleware/cache';
+import { CACHE_CONFIG } from '../constants/cache';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async (req: AuthRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const titleQuery = req.query.title as string;
@@ -66,7 +68,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // Get all posts for authenticated user (including unpublished)
-router.get('/my-posts', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/my-posts', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
     return res.status(401).json({
       error: 'Authentication required',
@@ -115,7 +117,7 @@ router.get('/my-posts', authenticateToken, asyncHandler(async (req: AuthRequest,
 }));
 
 // Get single post by slug
-router.get('/:slug', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/:slug', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { slug } = req.params;
 
   const post = await prisma.post.findUnique({
@@ -153,7 +155,7 @@ router.get('/:slug', asyncHandler(async (req: AuthRequest, res: Response) => {
   return res.json({ post });
 }));
 
-router.get('/drafts/:slug', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/drafts/:slug', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { slug } = req.params;
 
   const post = await prisma.post.findUnique({
@@ -240,6 +242,10 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
       },
     },
   });
+  invalidateCache.invalidateListCaches();
+  if (req.user) {
+    invalidateCache.invalidateUserCaches(req.user.id);
+  }
 
   return res.status(201).json({
     message: 'Post created successfully',
@@ -321,6 +327,12 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
     },
   });
 
+  invalidateCache.invalidateListCaches();
+  invalidateCache.invalidatePostCache(post.slug);
+  if (req.user) {
+    invalidateCache.invalidateUserCaches(req.user.id);
+  }
+
   return res.json({
     message: 'Post updated successfully',
     post,
@@ -357,6 +369,12 @@ router.delete('/:id', authenticateToken, asyncHandler(async (req: AuthRequest, r
   await prisma.post.delete({
     where: { id },
   });
+
+  invalidateCache.invalidateListCaches();
+  invalidateCache.invalidatePostCache(existingPost.slug);
+  if (req.user) {
+    invalidateCache.invalidateUserCaches(req.user.id);
+  }
 
   return res.json({
     message: 'Post deleted successfully',
