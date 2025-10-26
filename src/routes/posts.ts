@@ -242,7 +242,6 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
       },
     },
   });
-
   invalidateCache.invalidateListCaches();
   if (req.user) {
     invalidateCache.invalidateUserCaches(req.user.id);

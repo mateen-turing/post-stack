@@ -15,6 +15,7 @@ describe('Cache Middleware', () => {
     mockReq = {
       method: 'GET',
       path: '/api/posts',
+      originalUrl: '/api/posts?page=1&limit=10',
       query: { page: '1', limit: '10' },
       user: undefined
     };

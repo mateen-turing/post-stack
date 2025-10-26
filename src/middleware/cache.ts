@@ -10,15 +10,17 @@ const cache = new NodeCache({
 });
 
 export const generateCacheKey = (req: AuthRequest): string => {
-  const { path, query, user } = req;
+  const { query, user, originalUrl, path } = req;
   const userId = user?.id || 'anonymous';
-  
+
+  const fullPath = originalUrl ? originalUrl.split('?')[0] : path;
+
   const queryString = Object.keys(query)
     .sort()
     .map(key => `${key}:${query[key]}`)
     .join(':');
-  
-  return `${path}:${userId}:${queryString}`;
+
+  return `${fullPath}:${userId}:${queryString}`;
 };
 
 export const cacheMiddleware = (ttl?: number) => {
@@ -40,11 +42,11 @@ export const cacheMiddleware = (ttl?: number) => {
     const originalJson = res.json;
 
 
-    res.json = function(data: any) {
+    res.json = function (data: any) {
 
       const cacheTTL = ttl || CACHE_CONFIG.TTL_DEFAULT;
       cache.set(cacheKey, data, cacheTTL);
-      
+
 
       return originalJson.call(this, data);
     };
@@ -59,8 +61,10 @@ export const invalidateCache = {
   invalidateListCaches: () => {
     const keys = cache.keys();
     keys.forEach(key => {
-
       if (key.startsWith('/api/posts:') && !key.includes('/api/posts/')) {
+        cache.del(key);
+      }
+      if (key.startsWith('/api/posts/my-posts:')) {
         cache.del(key);
       }
     });
