@@ -932,4 +932,98 @@ describe('Blog Post Routes', () => {
       expect(data).toHaveProperty('error', 'Post not found');
     });
   });
+
+  describe('POST /api/posts/:slug - View Count', () => {
+    it('should increment view count when viewing a published post', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post',
+          published: true,
+          authorId: userId,
+          viewCount: 0,
+        },
+      });
+
+      expect(post.viewCount).toBe(0);
+
+      const response = await fetch(`${baseUrl}/posts/test-post`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('post');
+      expect(data.post.slug).toBe('test-post');
+
+      // Verify view count was incremented
+      const updatedPost = await prisma.post.findUnique({
+        where: { id: post.id },
+      });
+      expect(updatedPost?.viewCount).toBe(1);
+      expect(data.post.viewCount).toBe(1);
+    });
+
+    it('should return error when trying to view unpublished post', async () => {
+      await prisma.post.create({
+        data: {
+          title: 'Draft Post',
+          content: '# Draft Content',
+          slug: 'a-new-unpublished-draft-post',
+          published: false,
+          authorId: userId,
+          viewCount: 0,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/a-new-unpublished-draft-post`);
+
+      const data: any = await response.json();
+      
+      expect(response.status).toBe(404);
+      expect(data).toHaveProperty('error', 'Post not found');
+    });
+
+    it('should have initial view count of 0 for new posts', async () => {
+      const postData = {
+        title: 'New Post',
+        content: '# New Content',
+        published: false,
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data.post.viewCount).toBe(0);
+    });
+
+    it('should include viewCount in post list response', async () => {
+      await prisma.post.create({
+        data: {
+          title: 'Viewed Post',
+          content: '# Viewed Content',
+          slug: 'viewed-post',
+          published: true,
+          authorId: userId,
+          viewCount: 42,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts[0]).toHaveProperty('viewCount', 42);
+    });
+  });
 });

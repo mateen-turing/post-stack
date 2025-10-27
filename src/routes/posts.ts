@@ -146,6 +146,18 @@ router.get('/:slug', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandle
   }
 
 
+  if (post.published) {
+    await prisma.post.update({
+      where: { id: post.id },
+      data: {
+        viewCount: {
+          increment: 1,
+        },
+      },
+    });
+    post.viewCount += 1;
+  }
+
   return res.json({ post });
 }));
 
