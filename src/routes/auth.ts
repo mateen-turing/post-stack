@@ -109,8 +109,20 @@ router.get('/profile', authenticateToken, asyncHandler(async (req: AuthRequest, 
     },
   });
 
+  const followerCount = await prisma.follow.count({
+    where: { followingId: req.user.id },
+  });
+
+  const followingCount = await prisma.follow.count({
+    where: { followerId: req.user.id },
+  });
+
   return res.json({
-    user,
+    user: {
+      ...user,
+      followerCount,
+      followingCount,
+    },
   });
 }));
 
