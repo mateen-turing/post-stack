@@ -145,12 +145,6 @@ router.get('/:slug', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandle
     });
   }
 
-  // Only show published posts to non-authors
-  if (!post.published && (!req.user || req.user.id !== post.authorId)) {
-    return res.status(404).json({
-      error: 'Post not found',
-    });
-  }
 
   return res.json({ post });
 }));
