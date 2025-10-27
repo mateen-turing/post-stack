@@ -15,6 +15,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   if (prisma) {
+    await prisma.follow.deleteMany();
     await prisma.post.deleteMany();
     await prisma.user.deleteMany();
   }
