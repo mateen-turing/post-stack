@@ -1026,4 +1026,289 @@ describe('Blog Post Routes', () => {
       expect(data.posts[0]).toHaveProperty('viewCount', 42);
     });
   });
+
+  describe('POST /api/posts/:id/like - Like a post', () => {
+    it('should allow authenticated user to like a post', async () => {
+      // Create a post
+      const post = await prisma.post.create({
+        data: {
+          title: 'Likeable Post',
+          content: '# Likeable Content',
+          slug: 'likeable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Post liked successfully');
+      expect(data).toHaveProperty('likeCount', 1);
+
+      // Verify like was created in database
+      const like = await prisma.postLike.findUnique({
+        where: {
+          userId_postId: {
+            userId: userId,
+            postId: post.id,
+          },
+        },
+      });
+      expect(like).toBeTruthy();
+    });
+
+    it('should return error when user is not authenticated to like a post', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Likeable Post',
+          content: '# Likeable Content',
+          slug: 'likeable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/like`, {
+        method: 'POST',
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data).toHaveProperty('error', 'Access token required');
+    });
+
+    it('should return error when trying to like the same post twice', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Likeable Post',
+          content: '# Likeable Content',
+          slug: 'likeable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // First like
+      await fetch(`${baseUrl}/posts/${post.id}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      // Try to like again
+      const response = await fetch(`${baseUrl}/posts/${post.id}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'You have already liked this post');
+    });
+
+    it('should increment like count when liking', async () => {
+      // Create another user
+      const otherUser = await prisma.user.create({
+        data: {
+          email: 'other@example.com',
+          username: 'otheruser',
+          password: await bcrypt.hash('Password123', 12),
+        },
+      });
+      const otherAuthToken = jwt.sign({ userId: otherUser.id }, process.env.JWT_SECRET!);
+
+      const post = await prisma.post.create({
+        data: {
+          title: 'Likeable Post',
+          content: '# Likeable Content',
+          slug: 'likeable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // First user likes
+      await fetch(`${baseUrl}/posts/${post.id}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      // Second user likes
+      const response = await fetch(`${baseUrl}/posts/${post.id}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${otherAuthToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('likeCount', 2);
+    });
+  });
+
+  describe('DELETE /api/posts/:id/like - Unlike a post', () => {
+    it('should allow authenticated user to unlike a post', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Likeable Post',
+          content: '# Likeable Content',
+          slug: 'likeable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // First like the post
+      await prisma.postLike.create({
+        data: {
+          userId: userId,
+          postId: post.id,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/like`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('message', 'Post unliked successfully');
+      expect(data).toHaveProperty('likeCount', 0);
+
+      // Verify like was deleted from database
+      const like = await prisma.postLike.findUnique({
+        where: {
+          userId_postId: {
+            userId: userId,
+            postId: post.id,
+          },
+        },
+      });
+      expect(like).toBeNull();
+    });
+
+    it('should return error when user is not authenticated to unlike a post', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Likeable Post',
+          content: '# Likeable Content',
+          slug: 'likeable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/like`, {
+        method: 'DELETE',
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data).toHaveProperty('error', 'Access token required');
+    });
+
+    it('should return error when trying to unlike a post that was not liked', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Likeable Post',
+          content: '# Likeable Content',
+          slug: 'likeable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/like`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'You have not liked this post');
+    });
+  });
+
+  describe('Like count in posts', () => {
+    it('should include like count when fetching published posts', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Liked Post',
+          content: '# Liked Content',
+          slug: 'liked-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // Add likes
+      await prisma.postLike.createMany({
+        data: [
+          {
+            userId: userId,
+            postId: post.id,
+          },
+        ],
+      });
+
+      const response = await fetch(`${baseUrl}/posts`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts[0]).toHaveProperty('likeCount', 1);
+    });
+
+    it('should include like count when fetching a single post', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Single Liked Post',
+          content: '# Single Liked Content',
+          slug: 'single-liked-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // Add likes
+      await prisma.postLike.create({
+        data: {
+          userId: userId,
+          postId: post.id,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/single-liked-post`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.post).toHaveProperty('likeCount', 1);
+    });
+  });
 });
