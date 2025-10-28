@@ -14,21 +14,55 @@ router.get('/', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const titleQuery = req.query.title as string;
+  const authorIdQuery = req.query.authorId as string;
+  const categoryIdQuery = req.query.categoryId as string;
+  const sortBy = (req.query.sortBy as string) || 'createdAt';
+  const sortOrder = (req.query.sortOrder as string) || 'desc';
   const skip = (page - 1) * limit;
 
+  // Validate title query
   if (titleQuery !== undefined && (!titleQuery || titleQuery.trim().length === 0)) {
     return res.status(400).json({
       error: 'Title search query cannot be empty',
     });
   }
 
+  // Validate sort fields
+  const validSortFields = ['createdAt', 'updatedAt', 'title'];
+  if (!validSortFields.includes(sortBy)) {
+    return res.status(400).json({
+      error: `Invalid sort field. Must be one of: ${validSortFields.join(', ')}`,
+    });
+  }
+
+  // Validate sort order
+  const validSortOrders = ['asc', 'desc'];
+  if (!validSortOrders.includes(sortOrder.toLowerCase())) {
+    return res.status(400).json({
+      error: `Invalid sort order. Must be one of: ${validSortOrders.join(', ')}`,
+    });
+  }
+
+  // Build where clause
   const whereClause: any = { published: true };
+  
   if (titleQuery && titleQuery.trim()) {
     whereClause.title = {
       contains: titleQuery.trim(),
       mode: 'insensitive'
     };
   }
+  
+  if (authorIdQuery) {
+    whereClause.authorId = authorIdQuery;
+  }
+  
+  if (categoryIdQuery) {
+    whereClause.categoryId = categoryIdQuery;
+  }
+
+  // Build order by clause
+  const orderBy = { [sortBy]: sortOrder.toLowerCase() as 'asc' | 'desc' };
 
   const posts = await prisma.post.findMany({
     where: whereClause,
@@ -47,7 +81,7 @@ router.get('/', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async
         },
       },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy,
     skip,
     take: limit,
   });
