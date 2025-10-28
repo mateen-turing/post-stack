@@ -52,12 +52,25 @@ router.get('/', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async
     take: limit,
   });
 
+  // Get like counts for each post
+  const postsWithLikes = await Promise.all(
+    posts.map(async (post) => {
+      const likeCount = await prisma.postLike.count({
+        where: { postId: post.id },
+      });
+      return {
+        ...post,
+        likeCount,
+      };
+    })
+  );
+
   const total = await prisma.post.count({
     where: whereClause,
   });
 
   return res.json({
-    posts,
+    posts: postsWithLikes,
     pagination: {
       page,
       limit,
@@ -101,12 +114,25 @@ router.get('/my-posts', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POST
     take: limit,
   });
 
+  // Get like counts for each post
+  const postsWithLikes = await Promise.all(
+    posts.map(async (post) => {
+      const likeCount = await prisma.postLike.count({
+        where: { postId: post.id },
+      });
+      return {
+        ...post,
+        likeCount,
+      };
+    })
+  );
+
   const total = await prisma.post.count({
     where: { authorId: req.user.id },
   });
 
   return res.json({
-    posts,
+    posts: postsWithLikes,
     pagination: {
       page,
       limit,
@@ -145,6 +171,9 @@ router.get('/:slug', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandle
     });
   }
 
+  const likeCount = await prisma.postLike.count({
+    where: { postId: post.id },
+  });
 
   if (post.published) {
     await prisma.post.update({
@@ -158,7 +187,12 @@ router.get('/:slug', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandle
     post.viewCount += 1;
   }
 
-  return res.json({ post });
+  const postWithLikes = {
+    ...post,
+    likeCount,
+  };
+
+  return res.json({ post: postWithLikes });
 }));
 
 router.get('/drafts/:slug', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -195,7 +229,16 @@ router.get('/drafts/:slug', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_
     });
   }
 
-  return res.json({ post });
+  const likeCount = await prisma.postLike.count({
+    where: { postId: post.id },
+  });
+
+  const postWithLikes = {
+    ...post,
+    likeCount,
+  };
+
+  return res.json({ post: postWithLikes });
 }));
 
 // Create new post
@@ -384,6 +427,126 @@ router.delete('/:id', authenticateToken, asyncHandler(async (req: AuthRequest, r
 
   return res.json({
     message: 'Post deleted successfully',
+  });
+}));
+
+// Like a post
+router.post('/:id/like', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+    });
+  }
+
+  const { id } = req.params;
+
+  // Check if post exists
+  const post = await prisma.post.findUnique({
+    where: { id },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Check if user already liked this post
+  const existingLike = await prisma.postLike.findUnique({
+    where: {
+      userId_postId: {
+        userId: req.user.id,
+        postId: id,
+      },
+    },
+  });
+
+  if (existingLike) {
+    return res.status(400).json({
+      error: 'You have already liked this post',
+    });
+  }
+
+  // Create the like
+  await prisma.postLike.create({
+    data: {
+      userId: req.user.id,
+      postId: id,
+    },
+  });
+
+  // Get updated like count
+  const likeCount = await prisma.postLike.count({
+    where: { postId: id },
+  });
+
+  invalidateCache.invalidateListCaches();
+  invalidateCache.invalidatePostCache(post.slug);
+
+  return res.status(201).json({
+    message: 'Post liked successfully',
+    likeCount,
+  });
+}));
+
+// Unlike a post
+router.delete('/:id/like', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+    });
+  }
+
+  const { id } = req.params;
+
+  // Check if post exists
+  const post = await prisma.post.findUnique({
+    where: { id },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Check if user has liked this post
+  const existingLike = await prisma.postLike.findUnique({
+    where: {
+      userId_postId: {
+        userId: req.user.id,
+        postId: id,
+      },
+    },
+  });
+
+  if (!existingLike) {
+    return res.status(400).json({
+      error: 'You have not liked this post',
+    });
+  }
+
+  // Delete the like
+  await prisma.postLike.delete({
+    where: {
+      userId_postId: {
+        userId: req.user.id,
+        postId: id,
+      },
+    },
+  });
+
+  // Get updated like count
+  const likeCount = await prisma.postLike.count({
+    where: { postId: id },
+  });
+
+  invalidateCache.invalidateListCaches();
+  invalidateCache.invalidatePostCache(post.slug);
+
+  return res.json({
+    message: 'Post unliked successfully',
+    likeCount,
   });
 }));
 
