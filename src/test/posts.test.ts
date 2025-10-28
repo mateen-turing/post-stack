@@ -259,6 +259,300 @@ describe('Blog Post Routes', () => {
       expect(data.pagination.total).toBe(15);
       expect(data.posts.every((post: any) => post.title.toLowerCase().includes('javascript'))).toBe(true);
     });
+
+    it('should filter posts by author ID', async () => {
+      // Create another user
+      const otherUser = await prisma.user.create({
+        data: {
+          email: 'author2@example.com',
+          username: 'author2',
+          password: await bcrypt.hash('Password123', 12),
+        },
+      });
+
+      // Create posts from both users
+      await prisma.post.createMany({
+        data: [
+          {
+            title: 'Post by User 1',
+            content: '# Content 1',
+            slug: 'post-by-user-1',
+            published: true,
+            authorId: userId,
+          },
+          {
+            title: 'Post by User 2',
+            content: '# Content 2',
+            slug: 'post-by-user-2',
+            published: true,
+            authorId: otherUser.id,
+          },
+          {
+            title: 'Another Post by User 1',
+            content: '# Content 3',
+            slug: 'another-post-by-user-1',
+            published: true,
+            authorId: userId,
+          },
+        ],
+      });
+
+      // Filter by first user
+      const response = await fetch(`${baseUrl}/posts?authorId=${userId}`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts).toHaveLength(2);
+      expect(data.posts.every((post: any) => post.author.id === userId)).toBe(true);
+      expect(data.pagination.total).toBe(2);
+    });
+
+    it('should filter posts by category ID', async () => {
+
+      const [category1, category2] = await prisma.category.findMany({
+        take: 2
+      });
+
+
+      // Create posts in different categories
+      await prisma.post.createMany({
+        data: [
+          {
+            title: 'Tech Post 1',
+            content: '# Tech Content',
+            slug: 'tech-post-1',
+            published: true,
+            authorId: userId,
+            categoryId: category1.id,
+          },
+          {
+            title: 'Science Post 1',
+            content: '# Science Content',
+            slug: 'science-post-1',
+            published: true,
+            authorId: userId,
+            categoryId: category2.id,
+          },
+          {
+            title: 'Tech Post 2',
+            content: '# Tech Content 2',
+            slug: 'tech-post-2',
+            published: true,
+            authorId: userId,
+            categoryId: category1.id,
+          },
+          {
+            title: 'Uncategorized Post',
+            content: '# No Category',
+            slug: 'uncategorized-post',
+            published: true,
+            authorId: userId,
+            categoryId: null,
+          },
+        ],
+      });
+
+      // Filter by category
+      const response = await fetch(`${baseUrl}/posts?categoryId=${category1.id}`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts).toHaveLength(2);
+      expect(data.posts.every((post: any) => post.category.id === category1.id)).toBe(true);
+      expect(data.pagination.total).toBe(2);
+    });
+
+    it('should filter posts by author and category together', async () => {
+      const otherUser = await prisma.user.create({
+        data: {
+          email: 'author3@example.com',
+          username: 'author3',
+          password: await bcrypt.hash('Password123', 12),
+        },
+      });
+
+      const category = await prisma.category.findFirstOrThrow({
+        where: {
+          name: 'Tutorial'
+        }
+      });
+
+      // Create posts with different authors and categories
+      await prisma.post.createMany({
+        data: [
+          {
+            title: 'Post 1',
+            content: '# Content 1',
+            slug: 'post-1-filtered',
+            published: true,
+            authorId: userId,
+            categoryId: category.id,
+          },
+          {
+            title: 'Post 2',
+            content: '# Content 2',
+            slug: 'post-2-filtered',
+            published: true,
+            authorId: userId,
+            categoryId: null,
+          },
+          {
+            title: 'Post 3',
+            content: '# Content 3',
+            slug: 'post-3-filtered',
+            published: true,
+            authorId: otherUser.id,
+            categoryId: category.id,
+          },
+        ],
+      });
+
+      const response = await fetch(`${baseUrl}/posts?authorId=${userId}&categoryId=${category.id}`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts).toHaveLength(1);
+      expect(data.posts[0].author.id).toBe(userId);
+      expect(data.posts[0].category.id).toBe(category.id);
+    });
+
+    it('should sort posts by createdAt ascending', async () => {
+      // Create posts with different creation times
+      await prisma.post.create({
+        data: {
+          title: 'First Post',
+          content: '# First Content',
+          slug: 'first-post-sort',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // Wait a bit to ensure different timestamps
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      await prisma.post.create({
+        data: {
+          title: 'Second Post',
+          content: '# Second Content',
+          slug: 'second-post-sort',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      await prisma.post.create({
+        data: {
+          title: 'Third Post',
+          content: '# Third Content',
+          slug: 'third-post-sort',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts?sortBy=createdAt&sortOrder=asc`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts).toHaveLength(3);
+      // Check that posts are in ascending order
+      const timestamps = data.posts.map((post: any) => new Date(post.createdAt).getTime());
+      expect(timestamps).toEqual([...timestamps].sort((a, b) => a - b));
+    });
+
+    it('should sort posts by updatedAt descending', async () => {
+      const post1 = await prisma.post.create({
+        data: {
+          title: 'First Post',
+          content: '# First Content',
+          slug: 'first-post-updated',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const post2 = await prisma.post.create({
+        data: {
+          title: 'Second Post',
+          content: '# Second Content',
+          slug: 'second-post-updated',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // Update post1 to make it have a newer updatedAt
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await prisma.post.update({
+        where: { id: post1.id },
+        data: { content: '# Updated Content' },
+      });
+
+      const response = await fetch(`${baseUrl}/posts?sortBy=updatedAt&sortOrder=desc`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts.length).toBeGreaterThan(0);
+      // Post 1 should come first since it was updated most recently
+      expect(data.posts[0].slug).toBe('first-post-updated');
+    });
+
+    it('should work with all filters and sorting together', async () => {
+      const category = await prisma.category.findFirstOrThrow({
+        where: {
+          name: 'Tutorial',
+        },
+      });
+
+      await prisma.post.createMany({
+        data: [
+          {
+            title: 'JavaScript Tutorial',
+            content: '# Content',
+            slug: 'js-tutorial-1',
+            published: true,
+            authorId: userId,
+            categoryId: category.id,
+          },
+          {
+            title: 'Python Tutorial',
+            content: '# Content',
+            slug: 'python-tutorial-1',
+            published: true,
+            authorId: userId,
+            categoryId: category.id,
+          },
+          {
+            title: 'React Tutorial',
+            content: '# Content',
+            slug: 'react-tutorial-1',
+            published: true,
+            authorId: userId,
+            categoryId: category.id,
+          },
+        ],
+      });
+
+      const response = await fetch(`${baseUrl}/posts?title=Tutorial&categoryId=${category.id}&sortBy=title&sortOrder=asc&limit=2`);
+
+      const data: any = await response.json();
+
+      console.log(data, 'data')
+
+      expect(response.status).toBe(200);
+      expect(data.posts).toHaveLength(2);
+
+      expect(data.posts.every((post: any) => post.category.id === category.id)).toBe(true);
+      expect(data.posts.every((post: any) => post.title.toLowerCase().includes('tutorial'))).toBe(true);
+    });
   });
 
   describe('GET /api/posts/:slug', () => {
@@ -979,7 +1273,7 @@ describe('Blog Post Routes', () => {
       const response = await fetch(`${baseUrl}/posts/a-new-unpublished-draft-post`);
 
       const data: any = await response.json();
-      
+
       expect(response.status).toBe(404);
       expect(data).toHaveProperty('error', 'Post not found');
     });
