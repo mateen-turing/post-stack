@@ -8,37 +8,39 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(cuid())
-  email     String     @unique
-  username  String     @unique
+  id        String      @id @default(cuid())
+  email     String      @unique
+  username  String      @unique
   password  String
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  followers Follow[]   @relation("Follower")
-  following Follow[]   @relation("Following")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  followers Follow[]    @relation("Follower")
+  following Follow[]    @relation("Following")
   likes     PostLike[]
+  savedPosts SavedPost[]
   posts     Post[]
 
   @@map("users")
 }
 
 model Post {
-  id              String     @id @default(cuid())
+  id              String      @id @default(cuid())
   title           String
   content         String
-  slug            String     @unique
-  published       Boolean    @default(false)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  slug            String      @unique
+  published       Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
   authorId        String
   categoryId      String?
   metaDescription String?
   metaTitle       String?
   ogImage         String?
-  viewCount       Int        @default(0)
+  viewCount       Int         @default(0)
   likes           PostLike[]
-  author          User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  category        Category?  @relation(fields: [categoryId], references: [id])
+  savedBy         SavedPost[]
+  author          User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category        Category?   @relation(fields: [categoryId], references: [id])
 
   @@index([title])
   @@map("posts")
@@ -77,4 +79,16 @@ model PostLike {
 
   @@unique([userId, postId])
   @@map("post_likes")
+}
+
+model SavedPost {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@map("saved_posts")
 }
