@@ -61,8 +61,11 @@ router.get('/', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async
     whereClause.categoryId = categoryIdQuery;
   }
 
-  // Build order by clause
-  const orderBy = { [sortBy]: sortOrder.toLowerCase() as 'asc' | 'desc' };
+  // Build order by clause - featured posts first, then apply other sort params
+  const orderBy: any[] = [
+    { featured: 'desc' }, // Featured posts first
+    { [sortBy]: sortOrder.toLowerCase() as 'asc' | 'desc' }, // Then apply user's sort preference
+  ];
 
   const posts = await prisma.post.findMany({
     where: whereClause,
@@ -350,7 +353,7 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
     });
   }
 
-  const { title, content, published = false, categoryId, metaTitle, metaDescription, ogImage } = req.body;
+  const { title, content, published = false, featured = false, categoryId, metaTitle, metaDescription, ogImage } = req.body;
   const slug = generateSlug(title);
 
   // Check if slug already exists
@@ -370,6 +373,7 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
       content,
       slug,
       published,
+      featured,
       authorId: req.user.id,
       categoryId,
       metaTitle,
@@ -412,7 +416,7 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
   }
 
   const { id } = req.params;
-  const { title, content, published, categoryId, metaTitle, metaDescription, ogImage } = req.body;
+  const { title, content, published, featured, categoryId, metaTitle, metaDescription, ogImage } = req.body;
 
   // Check if post exists and user owns it
   const existingPost = await prisma.post.findUnique({
@@ -455,6 +459,7 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
       content,
       slug,
       published,
+      featured,
       categoryId,
       metaTitle,
       metaDescription,

@@ -3,7 +3,6 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
 
-
 describe('Blog Post Routes', () => {
   const baseUrl = `http://localhost:${process.env.PORT}/api`;
   let authToken: string;
@@ -545,13 +544,158 @@ describe('Blog Post Routes', () => {
 
       const data: any = await response.json();
 
-      console.log(data, 'data')
-
       expect(response.status).toBe(200);
       expect(data.posts).toHaveLength(2);
 
       expect(data.posts.every((post: any) => post.category.id === category.id)).toBe(true);
       expect(data.posts.every((post: any) => post.title.toLowerCase().includes('tutorial'))).toBe(true);
+    });
+
+    it('should return featured posts before non-featured posts', async () => {
+      // Create posts with different featured status
+      await prisma.post.createMany({
+        data: [
+          {
+            title: 'Regular Post 1',
+            content: '# Content',
+            slug: 'regular-post-1',
+            published: true,
+            featured: false,
+            authorId: userId,
+          },
+          {
+            title: 'Featured Post 1',
+            content: '# Content',
+            slug: 'featured-post-1',
+            published: true,
+            featured: true,
+            authorId: userId,
+          },
+          {
+            title: 'Regular Post 2',
+            content: '# Content',
+            slug: 'regular-post-2',
+            published: true,
+            featured: false,
+            authorId: userId,
+          },
+
+        ],
+      });
+
+      const postData = {
+        title: 'Featured Post 2',
+        content: '# Content',
+        slug: 'featured-post-2',
+        published: true,
+        featured: true,
+        authorId: userId,
+      }
+
+      const res = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      expect(res.status).toBe(201);
+
+      const response = await fetch(`${baseUrl}/posts`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts.length).toBeGreaterThanOrEqual(4);
+
+      // Find indices of featured posts
+      const featuredPost1Index = data.posts.findIndex((p: any) => p.slug === 'featured-post-1');
+      const featuredPost2Index = data.posts.findIndex((p: any) => p.slug === 'featured-post-2');
+      const regularPost1Index = data.posts.findIndex((p: any) => p.slug === 'regular-post-1');
+      const regularPost2Index = data.posts.findIndex((p: any) => p.slug === 'regular-post-2');
+
+      // Featured posts should appear before regular posts
+      expect(featuredPost1Index).toBeLessThan(regularPost1Index);
+      expect(featuredPost1Index).toBeLessThan(regularPost2Index);
+      expect(featuredPost2Index).toBeLessThan(regularPost1Index);
+      expect(featuredPost2Index).toBeLessThan(regularPost2Index);
+
+      // Verify featured status
+      expect(data.posts[featuredPost1Index].featured).toBe(true);
+      expect(data.posts[featuredPost2Index].featured).toBe(true);
+      expect(data.posts[regularPost1Index].featured).toBe(false);
+      expect(data.posts[regularPost2Index].featured).toBe(false);
+    });
+
+    it('should sort featured posts first, then apply other sort parameters', async () => {
+      // Create posts with different featured status and creation dates
+      const now = new Date();
+      await prisma.post.createMany({
+        data: [
+          {
+            title: 'Old Featured Post',
+            content: '# Content',
+            slug: 'old-featured-post',
+            published: true,
+            featured: true,
+            authorId: userId,
+            createdAt: new Date(now.getTime() - 86400000), // 1 day ago
+          },
+          {
+            title: 'Recent Regular Post',
+            content: '# Content',
+            slug: 'recent-regular-post',
+            published: true,
+            featured: false,
+            authorId: userId,
+            createdAt: new Date(now.getTime() - 3600000), // 1 hour ago
+          },
+          {
+            title: 'New Featured Post',
+            content: '# Content',
+            slug: 'new-featured-post',
+            published: true,
+            featured: true,
+            authorId: userId,
+            createdAt: now, // Just now
+          },
+          {
+            title: 'Older Regular Post',
+            content: '# Content',
+            slug: 'older-regular-post',
+            published: true,
+            featured: false,
+            authorId: userId,
+            createdAt: new Date(now.getTime() - 172800000), // 2 days ago
+          },
+        ],
+      });
+
+      // Request posts sorted by createdAt descending
+      const response = await fetch(`${baseUrl}/posts?sortBy=createdAt&sortOrder=desc`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts.length).toBeGreaterThanOrEqual(4);
+
+      // Find indices of posts
+      const newFeaturedIndex = data.posts.findIndex((p: any) => p.slug === 'new-featured-post');
+      const oldFeaturedIndex = data.posts.findIndex((p: any) => p.slug === 'old-featured-post');
+      const recentRegularIndex = data.posts.findIndex((p: any) => p.slug === 'recent-regular-post');
+      const olderRegularIndex = data.posts.findIndex((p: any) => p.slug === 'older-regular-post');
+
+      // Featured posts should appear first (in descending order by createdAt)
+      expect(newFeaturedIndex).toBeLessThan(oldFeaturedIndex);
+      expect(newFeaturedIndex).toBeLessThan(recentRegularIndex);
+      expect(newFeaturedIndex).toBeLessThan(olderRegularIndex);
+      expect(oldFeaturedIndex).toBeLessThan(recentRegularIndex);
+      expect(oldFeaturedIndex).toBeLessThan(olderRegularIndex);
+
+      // Regular posts should appear after all featured posts (also sorted by createdAt desc)
+      expect(recentRegularIndex).toBeLessThan(olderRegularIndex);
     });
   });
 
@@ -915,6 +1059,67 @@ describe('Blog Post Routes', () => {
       expect(data).toHaveProperty('message', 'Post created successfully');
       expect(data.post.ogImage).toBe(postData.ogImage);
     });
+
+    it('should create a post with featured status', async () => {
+      const postData = {
+        title: 'Featured Test Post',
+        content: '# Featured Test Content',
+        published: true,
+        featured: true,
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Post created successfully');
+      expect(data).toHaveProperty('post');
+      expect(data.post.featured).toBe(true);
+      expect(data.post.title).toBe(postData.title);
+
+      // Verify post was created in database with featured status
+      const post = await prisma.post.findUnique({
+        where: { slug: 'featured-test-post' },
+      });
+      expect(post).toBeTruthy();
+      expect(post?.featured).toBe(true);
+    });
+
+    it('should default featured to false when not provided', async () => {
+      const postData = {
+        title: 'Non Featured Post',
+        content: '# Non Featured Content',
+        published: true,
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data.post.featured).toBe(false);
+
+      // Verify post was created in database with default featured status
+      const post = await prisma.post.findUnique({
+        where: { slug: 'non-featured-post' },
+      });
+      expect(post?.featured).toBe(false);
+    });
   });
 
   describe('PUT /api/posts/:id', () => {
@@ -1002,6 +1207,50 @@ describe('Blog Post Routes', () => {
 
       expect(response.status).toBe(403);
       expect(data).toHaveProperty('error', 'Not authorized to update this post');
+    });
+
+    it('should update post featured status', async () => {
+      // First create a post that is not featured
+      const post = await prisma.post.create({
+        data: {
+          title: 'Regular Post',
+          content: '# Regular Content',
+          slug: 'regular-post',
+          published: true,
+          featured: false,
+          authorId: userId,
+        },
+      });
+
+      // Verify initial state
+      expect(post.featured).toBe(false);
+
+      const updateData = {
+        title: 'Regular Post',
+        content: '# Regular Content',
+        featured: true,
+      };
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('message', 'Post updated successfully');
+      expect(data.post.featured).toBe(true);
+
+      // Verify post was updated in database
+      const updatedPost = await prisma.post.findUnique({
+        where: { id: post.id },
+      });
+      expect(updatedPost?.featured).toBe(true);
     });
 
     it('should return 404 for non-existent post', async () => {
