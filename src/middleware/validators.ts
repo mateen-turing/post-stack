@@ -39,6 +39,10 @@ export const validatePost = [
     .optional()
     .isBoolean()
     .withMessage("Published must be a boolean"),
+  body("featured")
+    .optional()
+    .isBoolean()
+    .withMessage("Featured must be a boolean"),
   body("categoryId")
     .optional()
     .custom(async (value) => {
