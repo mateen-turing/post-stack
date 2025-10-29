@@ -1605,4 +1605,231 @@ describe('Blog Post Routes', () => {
       expect(data.post).toHaveProperty('likeCount', 1);
     });
   });
+
+  describe('POST /api/posts/:id/save - Save a post', () => {
+    it('should allow authenticated user to save a post', async () => {
+      // Create a post
+      const post = await prisma.post.create({
+        data: {
+          title: 'Saveable Post',
+          content: '# Saveable Content',
+          slug: 'saveable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/save`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Post saved successfully');
+
+      // Verify save was created in database
+      const savedPost = await prisma.savedPost.findUnique({
+        where: {
+          userId_postId: {
+            userId: userId,
+            postId: post.id,
+          },
+        },
+      });
+      expect(savedPost).toBeTruthy();
+    });
+
+    it('should return error when user is not authenticated to save a post', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Saveable Post',
+          content: '# Saveable Content',
+          slug: 'saveable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/save`, {
+        method: 'POST',
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data).toHaveProperty('error', 'Access token required');
+    });
+
+    it('should return error when trying to save the same post twice', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Saveable Post',
+          content: '# Saveable Content',
+          slug: 'saveable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // First save
+      await fetch(`${baseUrl}/posts/${post.id}/save`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      // Try to save again
+      const response = await fetch(`${baseUrl}/posts/${post.id}/save`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'You have already saved this post');
+    });
+  });
+
+  describe('DELETE /api/posts/:id/save - Unsave a post', () => {
+    it('should allow authenticated user to unsave a post', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Saveable Post',
+          content: '# Saveable Content',
+          slug: 'saveable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // First save the post
+      await prisma.savedPost.create({
+        data: {
+          userId: userId,
+          postId: post.id,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/save`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('message', 'Post unsaved successfully');
+
+      // Verify save was deleted from database
+      const savedPost = await prisma.savedPost.findUnique({
+        where: {
+          userId_postId: {
+            userId: userId,
+            postId: post.id,
+          },
+        },
+      });
+      expect(savedPost).toBeNull();
+    });
+
+    it('should return error when user is not authenticated to unsave a post', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Saveable Post',
+          content: '# Saveable Content',
+          slug: 'saveable-post',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/save`, {
+        method: 'DELETE',
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data).toHaveProperty('error', 'Access token required');
+    });
+  });
+
+  describe('GET /api/posts/saved - Get saved posts', () => {
+    it('should return saved posts for authenticated user', async () => {
+      // Create posts
+      const post1 = await prisma.post.create({
+        data: {
+          title: 'Saved Post 1',
+          content: '# Saved Content 1',
+          slug: 'saved-post-1',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const post2 = await prisma.post.create({
+        data: {
+          title: 'Saved Post 2',
+          content: '# Saved Content 2',
+          slug: 'saved-post-2',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // Save the posts
+      await prisma.savedPost.createMany({
+        data: [
+          {
+            userId: userId,
+            postId: post1.id,
+          },
+          {
+            userId: userId,
+            postId: post2.id,
+          },
+        ],
+      });
+
+      const response = await fetch(`${baseUrl}/posts/saved`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('posts');
+      expect(data).toHaveProperty('pagination');
+      expect(data.posts).toHaveLength(2);
+      expect(data.posts[0]).toHaveProperty('title');
+      expect(data.posts[0]).toHaveProperty('savedAt');
+      expect(data.pagination).toHaveProperty('page', 1);
+      expect(data.pagination).toHaveProperty('limit', 10);
+      expect(data.pagination).toHaveProperty('total', 2);
+    });
+
+    it('should return error when user is not authenticated', async () => {
+      const response = await fetch(`${baseUrl}/posts/saved`, {
+        method: 'GET',
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data).toHaveProperty('error', 'Access token required');
+    });
+  });
 });

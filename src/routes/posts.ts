@@ -176,6 +176,73 @@ router.get('/my-posts', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POST
   });
 }));
 
+// Get saved posts for authenticated user
+router.get('/saved', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+    });
+  }
+
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const skip = (page - 1) * limit;
+
+  const savedPosts = await prisma.savedPost.findMany({
+    where: { userId: req.user.id },
+    include: {
+      post: {
+        include: {
+          author: {
+            select: {
+              id: true,
+              username: true,
+            },
+          },
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    skip,
+    take: limit,
+  });
+
+  // Get like counts for each post
+  const postsWithLikes = await Promise.all(
+    savedPosts.map(async (savedPost) => {
+      const likeCount = await prisma.postLike.count({
+        where: { postId: savedPost.post.id },
+      });
+      return {
+        ...savedPost.post,
+        likeCount,
+        savedAt: savedPost.createdAt,
+      };
+    })
+  );
+
+  const total = await prisma.savedPost.count({
+    where: { userId: req.user.id },
+  });
+
+  return res.json({
+    posts: postsWithLikes,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  });
+}));
+
 // Get single post by slug
 router.get('/:slug', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { slug } = req.params;
@@ -581,6 +648,114 @@ router.delete('/:id/like', authenticateToken, asyncHandler(async (req: AuthReque
   return res.json({
     message: 'Post unliked successfully',
     likeCount,
+  });
+}));
+
+// Save a post
+router.post('/:id/save', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+    });
+  }
+
+  const { id } = req.params;
+
+  // Check if post exists
+  const post = await prisma.post.findUnique({
+    where: { id },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Check if user already saved this post
+  const existingSave = await prisma.savedPost.findUnique({
+    where: {
+      userId_postId: {
+        userId: req.user.id,
+        postId: id,
+      },
+    },
+  });
+
+  if (existingSave) {
+    return res.status(400).json({
+      error: 'You have already saved this post',
+    });
+  }
+
+  // Create the save
+  await prisma.savedPost.create({
+    data: {
+      userId: req.user.id,
+      postId: id,
+    },
+  });
+
+  invalidateCache.invalidateListCaches();
+  invalidateCache.invalidatePostCache(post.slug);
+
+  return res.status(201).json({
+    message: 'Post saved successfully',
+  });
+}));
+
+// Unsave a post
+router.delete('/:id/save', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+    });
+  }
+
+  const { id } = req.params;
+
+  // Check if post exists
+  const post = await prisma.post.findUnique({
+    where: { id },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Check if user has saved this post
+  const existingSave = await prisma.savedPost.findUnique({
+    where: {
+      userId_postId: {
+        userId: req.user.id,
+        postId: id,
+      },
+    },
+  });
+
+  if (!existingSave) {
+    return res.status(400).json({
+      error: 'You have not saved this post',
+    });
+  }
+
+  // Delete the save
+  await prisma.savedPost.delete({
+    where: {
+      userId_postId: {
+        userId: req.user.id,
+        postId: id,
+      },
+    },
+  });
+
+  invalidateCache.invalidateListCaches();
+  invalidateCache.invalidatePostCache(post.slug);
+
+  return res.json({
+    message: 'Post unsaved successfully',
   });
 }));
 
