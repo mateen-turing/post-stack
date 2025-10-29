@@ -75,7 +75,7 @@ describe('Rate Limiting', () => {
   describe('Rate Limiting Configuration', () => {
     it('should have correct production values', () => {
 
-      expect(RATE_LIMIT_MAX_REQUESTS).toBe(100);
+      expect(RATE_LIMIT_MAX_REQUESTS).toBe(500);
       expect(RATE_LIMIT_WINDOW_MS).toBe(15 * 60 * 1000);
     });
 
