@@ -2302,4 +2302,185 @@ describe('Blog Post Routes', () => {
       expect(data.comments).toHaveLength(0);
     });
   });
+
+  describe('POST /api/posts/:postId/comments/:commentId/like - Like a comment', () => {
+    it('should allow authenticated user to like a comment', async () => {
+      // Create a post
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-like-comment',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // Create a comment
+      const comment = await prisma.comment.create({
+        data: {
+          content: 'Test comment',
+          postId: post.id,
+          userId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments/${comment.id}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Comment liked successfully');
+      expect(data).toHaveProperty('likeCount', 1);
+
+      // Verify like was created in database
+      const like = await prisma.commentLike.findUnique({
+        where: {
+          userId_commentId: {
+            userId: userId,
+            commentId: comment.id,
+          },
+        },
+      });
+      expect(like).toBeTruthy();
+    });
+
+    it('should return error when trying to like the same comment twice', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-double-like',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const comment = await prisma.comment.create({
+        data: {
+          content: 'Test comment',
+          postId: post.id,
+          userId: userId,
+        },
+      });
+
+      // First like
+      await fetch(`${baseUrl}/posts/${post.id}/comments/${comment.id}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      // Try to like again
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments/${comment.id}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'You have already liked this comment');
+    });
+
+    it('should include like count when fetching comments', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-comments-like-count',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const comment = await prisma.comment.create({
+        data: {
+          content: 'Test comment',
+          postId: post.id,
+          userId: userId,
+        },
+      });
+
+      // Add likes to the comment
+      await prisma.commentLike.createMany({
+        data: [
+          {
+            userId: userId,
+            commentId: comment.id,
+          },
+        ],
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.comments).toHaveLength(1);
+      expect(data.comments[0]).toHaveProperty('likeCount', 1);
+    });
+  });
+
+  describe('DELETE /api/posts/:postId/comments/:commentId/like - Unlike a comment', () => {
+    it('should allow authenticated user to unlike a comment', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-unlike-comment',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const comment = await prisma.comment.create({
+        data: {
+          content: 'Test comment',
+          postId: post.id,
+          userId: userId,
+        },
+      });
+
+      // First like the comment
+      await prisma.commentLike.create({
+        data: {
+          userId: userId,
+          commentId: comment.id,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments/${comment.id}/like`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('message', 'Comment unliked successfully');
+      expect(data).toHaveProperty('likeCount', 0);
+
+      // Verify like was deleted from database
+      const like = await prisma.commentLike.findUnique({
+        where: {
+          userId_commentId: {
+            userId: userId,
+            commentId: comment.id,
+          },
+        },
+      });
+      expect(like).toBeNull();
+    });
+  });
 });

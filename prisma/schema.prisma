@@ -17,6 +17,7 @@ model User {
   followers Follow[]    @relation("Follower")
   following Follow[]    @relation("Following")
   likes     PostLike[]
+  commentLikes CommentLike[]
   savedPosts SavedPost[]
   posts     Post[]
   comments  Comment[]
@@ -109,6 +110,19 @@ model Comment {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Comment[] @relation("CommentReplies")
+  likes     CommentLike[]
 
   @@map("comments")
+}
+
+model CommentLike {
+  id        String   @id @default(cuid())
+  userId    String
+  commentId String
+  createdAt DateTime @default(now())
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@map("comment_likes")
 }
