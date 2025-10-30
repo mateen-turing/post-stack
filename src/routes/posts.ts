@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken, generateSlug } from '../utils/auth';
-import { validatePost } from '../middleware/validators';
+import { validatePost, validateComment } from '../middleware/validators';
 import { handleValidationErrors, asyncHandler } from '../middleware/validation';
 import { AuthRequest } from '../utils/auth';
 import { cacheMiddleware, invalidateCache } from '../middleware/cache';
@@ -243,6 +243,226 @@ router.get('/saved', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POSTS_L
       total,
       pages: Math.ceil(total / limit),
     },
+  });
+}));
+
+// Helper function to calculate thread depth
+async function getThreadDepth(commentId: string, depth: number = 0): Promise<number> {
+  if (depth >= 5) {
+    return depth;
+  }
+  
+  const comment = await prisma.comment.findUnique({
+    where: { id: commentId },
+    select: { parentId: true },
+  });
+  
+  if (!comment || !comment.parentId) {
+    return depth;
+  }
+  
+  return getThreadDepth(comment.parentId, depth + 1);
+}
+
+// Get comments for a post
+router.get('/:postId/comments', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { postId } = req.params;
+
+  // Check if post exists
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Recursively get nested replies
+  async function getNestedReplies(parentId: string, currentDepth: number = 0): Promise<any[]> {
+    if (currentDepth >= 5) {
+      return [];
+    }
+
+    const replies = await prisma.comment.findMany({
+      where: { 
+        parentId: parentId,
+        postId: postId  // Ensure replies belong to the same post
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const repliesWithNested = await Promise.all(
+      replies.map(async (reply: any) => ({
+        id: reply.id,
+        content: reply.content,
+        postId: reply.postId,
+        userId: reply.userId,
+        parentId: reply.parentId,
+        createdAt: reply.createdAt,
+        updatedAt: reply.updatedAt,
+        user: reply.user,
+        replies: await getNestedReplies(reply.id, currentDepth + 1),
+      }))
+    );
+
+    return repliesWithNested;
+  }
+
+  // Get all top-level comments (no parent)
+  const comments = await prisma.comment.findMany({
+    where: { postId, parentId: null },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+        },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  // Add nested replies to top-level comments
+  const commentsWithReplies = await Promise.all(
+    comments.map(async (comment: any) => ({
+      id: comment.id,
+      content: comment.content,
+      postId: comment.postId,
+      userId: comment.userId,
+      parentId: comment.parentId,
+      createdAt: comment.createdAt,
+      updatedAt: comment.updatedAt,
+      user: comment.user,
+      replies: await getNestedReplies(comment.id, 0),
+    }))
+  );
+
+  return res.json({
+    comments: commentsWithReplies,
+  });
+}));
+
+// Create a comment on a post
+router.post('/:postId/comments', authenticateToken, validateComment, handleValidationErrors, asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+    });
+  }
+
+  const { postId } = req.params;
+  const { content } = req.body;
+
+  // Check if post exists
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Create the comment
+  const comment = await prisma.comment.create({
+    data: {
+      content,
+      postId,
+      userId: req.user.id,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+        },
+      },
+    },
+  });
+
+  invalidateCache.invalidatePostCache(post.slug);
+
+  return res.status(201).json({
+    message: 'Comment created successfully',
+    comment,
+  });
+}));
+
+// Reply to a comment
+router.post('/:postId/comments/:commentId/reply', authenticateToken, validateComment, handleValidationErrors, asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+    });
+  }
+
+  const { postId, commentId } = req.params;
+  const { content } = req.body;
+
+  // Check if post exists
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Check if parent comment exists and belongs to the post
+  const parentComment = await prisma.comment.findUnique({
+    where: { id: commentId },
+  });
+
+  if (!parentComment || parentComment.postId !== postId) {
+    return res.status(404).json({
+      error: 'Comment not found',
+    });
+  }
+
+  // Check thread depth
+  const threadDepth = await getThreadDepth(commentId);
+  if (threadDepth >= 5) {
+    return res.status(400).json({
+      error: 'Maximum thread depth of 5 levels reached',
+    });
+  }
+
+  // Create the reply
+  const reply = await prisma.comment.create({
+    data: {
+      content,
+      postId,
+      userId: req.user.id,
+      parentId: commentId,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+        },
+      },
+    },
+  });
+
+  invalidateCache.invalidatePostCache(post.slug);
+
+  return res.status(201).json({
+    message: 'Reply created successfully',
+    comment: reply,
   });
 }));
 
