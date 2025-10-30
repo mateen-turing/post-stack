@@ -2081,4 +2081,225 @@ describe('Blog Post Routes', () => {
       expect(data).toHaveProperty('error', 'Access token required');
     });
   });
+
+  describe('POST /api/posts/:postId/comments', () => {
+    it('should create a comment on a post when authenticated', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-comments',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          content: 'This is a test comment',
+        }),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Comment created successfully');
+      expect(data.comment).toHaveProperty('content', 'This is a test comment');
+      expect(data.comment).toHaveProperty('postId', post.id);
+      expect(data.comment).toHaveProperty('userId', userId);
+      expect(data.comment.user).toHaveProperty('username', 'testuser');
+    });
+
+    it('should return error when not authenticated', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-comments-2',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: 'This is a test comment',
+        }),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data).toHaveProperty('error', 'Access token required');
+    });
+  });
+
+  describe('POST /api/posts/:postId/comments/:commentId/reply', () => {
+    it('should create a reply to a comment when authenticated', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-reply',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const comment = await prisma.comment.create({
+        data: {
+          content: 'Parent comment',
+          postId: post.id,
+          userId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments/${comment.id}/reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          content: 'This is a reply',
+        }),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Reply created successfully');
+      expect(data.comment).toHaveProperty('content', 'This is a reply');
+      expect(data.comment).toHaveProperty('parentId', comment.id);
+      expect(data.comment).toHaveProperty('postId', post.id);
+    });
+
+    it('should enforce thread depth limit of 5 levels', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-depth',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      // Create a chain of 5 nested comments
+      let parentComment = await prisma.comment.create({
+        data: {
+          content: 'Level 0',
+          postId: post.id,
+          userId: userId,
+        },
+      });
+
+      for (let i = 1; i <= 5; i++) {
+        parentComment = await prisma.comment.create({
+          data: {
+            content: `Level ${i}`,
+            postId: post.id,
+            userId: userId,
+            parentId: parentComment.id,
+          },
+        });
+      }
+
+      // Try to create a 6th level comment
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments/${parentComment.id}/reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          content: 'This should fail',
+        }),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'Maximum thread depth of 5 levels reached');
+    });
+  });
+
+  describe('GET /api/posts/:postId/comments', () => {
+    it('should get comments for a post', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-get-comments',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const comment1 = await prisma.comment.create({
+        data: {
+          content: 'First comment',
+          postId: post.id,
+          userId: userId,
+        },
+      });
+
+      const comment2 = await prisma.comment.create({
+        data: {
+          content: 'Second comment',
+          postId: post.id,
+          userId: userId,
+        },
+      });
+
+      // Add a reply to comment1
+      await prisma.comment.create({
+        data: {
+          content: 'Reply to first comment',
+          postId: post.id,
+          userId: userId,
+          parentId: comment1.id,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('comments');
+      expect(data.comments).toHaveLength(2);
+      expect(data.comments[0].replies).toHaveLength(1);
+      expect(data.comments[0].replies[0]).toHaveProperty('content', 'Reply to first comment');
+    });
+
+    it('should return empty array when post has no comments', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Test Post',
+          content: '# Test Content',
+          slug: 'test-post-no-comments',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}/comments`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('comments');
+      expect(data.comments).toHaveLength(0);
+    });
+  });
 });

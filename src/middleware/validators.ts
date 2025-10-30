@@ -72,3 +72,9 @@ export const validatePost = [
     .isURL()
     .withMessage("OG image must be a valid URL"),
 ];
+
+export const validateComment = [
+  body("content")
+    .isLength({ min: 1, max: 5000 })
+    .withMessage("Comment content must be between 1 and 5000 characters"),
+];

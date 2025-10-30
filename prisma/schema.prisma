@@ -19,6 +19,7 @@ model User {
   likes     PostLike[]
   savedPosts SavedPost[]
   posts     Post[]
+  comments  Comment[]
 
   @@map("users")
 }
@@ -40,6 +41,7 @@ model Post {
   viewCount       Int         @default(0)
   likes           PostLike[]
   savedBy         SavedPost[]
+  comments        Comment[]
   author          User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
   category        Category?   @relation(fields: [categoryId], references: [id])
 
@@ -93,4 +95,20 @@ model SavedPost {
 
   @@unique([userId, postId])
   @@map("saved_posts")
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  content   String
+  postId    String
+  userId    String
+  parentId  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+
+  @@map("comments")
 }
