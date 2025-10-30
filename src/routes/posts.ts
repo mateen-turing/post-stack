@@ -302,17 +302,23 @@ router.get('/:postId/comments', asyncHandler(async (req: AuthRequest, res: Respo
     });
 
     const repliesWithNested = await Promise.all(
-      replies.map(async (reply: any) => ({
-        id: reply.id,
-        content: reply.content,
-        postId: reply.postId,
-        userId: reply.userId,
-        parentId: reply.parentId,
-        createdAt: reply.createdAt,
-        updatedAt: reply.updatedAt,
-        user: reply.user,
-        replies: await getNestedReplies(reply.id, currentDepth + 1),
-      }))
+      replies.map(async (reply: any) => {
+        const likeCount = await prisma.commentLike.count({
+          where: { commentId: reply.id },
+        });
+        return {
+          id: reply.id,
+          content: reply.content,
+          postId: reply.postId,
+          userId: reply.userId,
+          parentId: reply.parentId,
+          createdAt: reply.createdAt,
+          updatedAt: reply.updatedAt,
+          user: reply.user,
+          likeCount,
+          replies: await getNestedReplies(reply.id, currentDepth + 1),
+        };
+      })
     );
 
     return repliesWithNested;
@@ -334,17 +340,23 @@ router.get('/:postId/comments', asyncHandler(async (req: AuthRequest, res: Respo
 
   // Add nested replies to top-level comments
   const commentsWithReplies = await Promise.all(
-    comments.map(async (comment: any) => ({
-      id: comment.id,
-      content: comment.content,
-      postId: comment.postId,
-      userId: comment.userId,
-      parentId: comment.parentId,
-      createdAt: comment.createdAt,
-      updatedAt: comment.updatedAt,
-      user: comment.user,
-      replies: await getNestedReplies(comment.id, 0),
-    }))
+    comments.map(async (comment: any) => {
+      const likeCount = await prisma.commentLike.count({
+        where: { commentId: comment.id },
+      });
+      return {
+        id: comment.id,
+        content: comment.content,
+        postId: comment.postId,
+        userId: comment.userId,
+        parentId: comment.parentId,
+        createdAt: comment.createdAt,
+        updatedAt: comment.updatedAt,
+        user: comment.user,
+        likeCount,
+        replies: await getNestedReplies(comment.id, 0),
+      };
+    })
   );
 
   return res.json({
@@ -463,6 +475,146 @@ router.post('/:postId/comments/:commentId/reply', authenticateToken, validateCom
   return res.status(201).json({
     message: 'Reply created successfully',
     comment: reply,
+  });
+}));
+
+// Like a comment
+router.post('/:postId/comments/:commentId/like', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+    });
+  }
+
+  const { postId, commentId } = req.params;
+
+  // Check if post exists
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Check if comment exists and belongs to the post
+  const comment = await prisma.comment.findUnique({
+    where: { id: commentId },
+  });
+
+  if (!comment || comment.postId !== postId) {
+    return res.status(404).json({
+      error: 'Comment not found',
+    });
+  }
+
+  // Check if user already liked this comment
+  const existingLike = await prisma.commentLike.findUnique({
+    where: {
+      userId_commentId: {
+        userId: req.user.id,
+        commentId: commentId,
+      },
+    },
+  });
+
+  if (existingLike) {
+    return res.status(400).json({
+      error: 'You have already liked this comment',
+    });
+  }
+
+  // Create the like
+  await prisma.commentLike.create({
+    data: {
+      userId: req.user.id,
+      commentId: commentId,
+    },
+  });
+
+  // Get updated like count
+  const likeCount = await prisma.commentLike.count({
+    where: { commentId: commentId },
+  });
+
+  invalidateCache.invalidatePostCache(post.slug);
+
+  return res.status(201).json({
+    message: 'Comment liked successfully',
+    likeCount,
+  });
+}));
+
+// Unlike a comment
+router.delete('/:postId/comments/:commentId/like', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+    });
+  }
+
+  const { postId, commentId } = req.params;
+
+  // Check if post exists
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Check if comment exists and belongs to the post
+  const comment = await prisma.comment.findUnique({
+    where: { id: commentId },
+  });
+
+  if (!comment || comment.postId !== postId) {
+    return res.status(404).json({
+      error: 'Comment not found',
+    });
+  }
+
+  // Check if user has liked this comment
+  const existingLike = await prisma.commentLike.findUnique({
+    where: {
+      userId_commentId: {
+        userId: req.user.id,
+        commentId: commentId,
+      },
+    },
+  });
+
+  if (!existingLike) {
+    return res.status(400).json({
+      error: 'You have not liked this comment',
+    });
+  }
+
+  // Delete the like
+  await prisma.commentLike.delete({
+    where: {
+      userId_commentId: {
+        userId: req.user.id,
+        commentId: commentId,
+      },
+    },
+  });
+
+  // Get updated like count
+  const likeCount = await prisma.commentLike.count({
+    where: { commentId: commentId },
+  });
+
+  invalidateCache.invalidatePostCache(post.slug);
+
+  return res.json({
+    message: 'Comment unliked successfully',
+    likeCount,
   });
 }));
 
