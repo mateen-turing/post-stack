@@ -45,18 +45,18 @@ router.get('/', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async
 
   // Build where clause
   const whereClause: any = { published: true };
-  
+
   if (titleQuery && titleQuery.trim()) {
     whereClause.title = {
       contains: titleQuery.trim(),
       mode: 'insensitive'
     };
   }
-  
+
   if (authorIdQuery) {
     whereClause.authorId = authorIdQuery;
   }
-  
+
   if (categoryIdQuery) {
     whereClause.categoryId = categoryIdQuery;
   }
@@ -284,16 +284,16 @@ async function getThreadDepth(commentId: string, depth: number = 0): Promise<num
   if (depth >= 5) {
     return depth;
   }
-  
+
   const comment = await prisma.comment.findUnique({
     where: { id: commentId },
     select: { parentId: true },
   });
-  
+
   if (!comment || !comment.parentId) {
     return depth;
   }
-  
+
   return getThreadDepth(comment.parentId, depth + 1);
 }
 
@@ -319,7 +319,7 @@ router.get('/:postId/comments', asyncHandler(async (req: AuthRequest, res: Respo
     }
 
     const replies = await prisma.comment.findMany({
-      where: { 
+      where: {
         parentId: parentId,
         postId: postId  // Ensure replies belong to the same post
       },
@@ -648,6 +648,104 @@ router.delete('/:postId/comments/:commentId/like', authenticateToken, asyncHandl
   return res.json({
     message: 'Comment unliked successfully',
     likeCount,
+  });
+}));
+
+// Get related posts for a post by slug
+router.get('/:slug/related', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { slug } = req.params;
+
+  // Find the post by slug
+  const post = await prisma.post.findUnique({
+    where: { slug, published: true },
+    include: {
+      tags: {
+        include: {
+          tag: true,
+        },
+      },
+    },
+  });
+
+  if (!post) {
+    return res.status(404).json({
+      error: 'Post not found',
+    });
+  }
+
+  // Get all tag IDs for this post
+  const tagIds = post.tags.map((postTag: any) => postTag.tagId);
+
+  // If post has no tags, return empty array
+  if (tagIds.length === 0) {
+    return res.json({
+      posts: [],
+    });
+  }
+
+
+  const relatedPosts = await prisma.post.findMany({
+    where: {
+      published: true,
+      id: {
+        not: post.id,
+      },
+      tags: {
+        some: {
+          tagId: {
+            in: tagIds,
+          },
+        },
+      },
+    },
+    include: {
+      author: {
+        select: {
+          id: true,
+          username: true,
+        },
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: [
+      { featured: 'desc' },
+      { createdAt: 'desc' },
+    ],
+    take: 5,
+  });
+
+  // Get like counts for each related post
+  const postsWithLikes = await Promise.all(
+    relatedPosts.map(async (relatedPost) => {
+      const likeCount = await prisma.postLike.count({
+        where: { postId: relatedPost.id },
+      });
+      return {
+        ...relatedPost,
+        likeCount,
+        tags: relatedPost.tags.map((postTag: any) => postTag.tag),
+      };
+    })
+  );
+
+  return res.json({
+    posts: postsWithLikes,
   });
 }));
 
