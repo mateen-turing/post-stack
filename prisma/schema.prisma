@@ -43,6 +43,7 @@ model Post {
   likes           PostLike[]
   savedBy         SavedPost[]
   comments        Comment[]
+  tags            PostTag[]
   author          User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
   category        Category?   @relation(fields: [categoryId], references: [id])
 
@@ -125,4 +126,26 @@ model CommentLike {
 
   @@unique([userId, commentId])
   @@map("comment_likes")
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  posts     PostTag[]
+
+  @@map("tags")
+}
+
+model PostTag {
+  id        String   @id @default(cuid())
+  postId    String
+  tagId     String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, tagId])
+  @@map("post_tags")
 }

@@ -83,6 +83,16 @@ router.get('/', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async
           slug: true,
         },
       },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
     },
     orderBy,
     skip,
@@ -98,6 +108,7 @@ router.get('/', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_LIST), asyncHandler(async
       return {
         ...post,
         likeCount,
+        tags: post.tags.map((postTag: any) => postTag.tag),
       };
     })
   );
@@ -145,6 +156,16 @@ router.get('/my-posts', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POST
           slug: true,
         },
       },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
     },
     orderBy: { createdAt: 'desc' },
     skip,
@@ -160,6 +181,7 @@ router.get('/my-posts', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POST
       return {
         ...post,
         likeCount,
+        tags: post.tags.map((postTag: any) => postTag.tag),
       };
     })
   );
@@ -209,6 +231,16 @@ router.get('/saved', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POSTS_L
               slug: true,
             },
           },
+          tags: {
+            include: {
+              tag: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -227,6 +259,7 @@ router.get('/saved', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_POSTS_L
         ...savedPost.post,
         likeCount,
         savedAt: savedPost.createdAt,
+        tags: savedPost.post.tags.map((postTag: any) => postTag.tag),
       };
     })
   );
@@ -638,6 +671,16 @@ router.get('/:slug', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandle
           slug: true,
         },
       },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -666,6 +709,7 @@ router.get('/:slug', cacheMiddleware(CACHE_CONFIG.TTL_POSTS_SINGLE), asyncHandle
   const postWithLikes = {
     ...post,
     likeCount,
+    tags: post.tags.map((postTag: any) => postTag.tag),
   };
 
   return res.json({ post: postWithLikes });
@@ -690,6 +734,16 @@ router.get('/drafts/:slug', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_
           slug: true,
         },
       },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -712,6 +766,7 @@ router.get('/drafts/:slug', authenticateToken, cacheMiddleware(CACHE_CONFIG.TTL_
   const postWithLikes = {
     ...post,
     likeCount,
+    tags: post.tags.map((postTag: any) => postTag.tag),
   };
 
   return res.json({ post: postWithLikes });
@@ -725,7 +780,7 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
     });
   }
 
-  const { title, content, published = false, featured = false, categoryId, metaTitle, metaDescription, ogImage } = req.body;
+  const { title, content, published = false, featured = false, categoryId, metaTitle, metaDescription, ogImage, tags } = req.body;
   const slug = generateSlug(title);
 
   // Check if slug already exists
@@ -751,6 +806,9 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
       metaTitle,
       metaDescription,
       ogImage,
+      tags: tags && tags.length > 0 ? {
+        create: tags.map((tagId: string) => ({ tagId })),
+      } : undefined,
     },
     include: {
       author: {
@@ -766,6 +824,16 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
           slug: true,
         },
       },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
     },
   });
   invalidateCache.invalidateListCaches();
@@ -773,9 +841,14 @@ router.post('/', validatePost, authenticateToken, handleValidationErrors, asyncH
     invalidateCache.invalidateUserCaches(req.user.id);
   }
 
+  const postWithTags = {
+    ...post,
+    tags: post.tags.map((postTag: any) => postTag.tag),
+  };
+
   return res.status(201).json({
     message: 'Post created successfully',
-    post,
+    post: postWithTags,
   });
 }));
 
@@ -788,7 +861,7 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
   }
 
   const { id } = req.params;
-  const { title, content, published, featured, categoryId, metaTitle, metaDescription, ogImage } = req.body;
+  const { title, content, published, featured, categoryId, metaTitle, metaDescription, ogImage, tags } = req.body;
 
   // Check if post exists and user owns it
   const existingPost = await prisma.post.findUnique({
@@ -824,6 +897,14 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
     }
   }
 
+  // Update tags if provided
+  if (tags !== undefined) {
+    // Delete all existing tags for this post
+    await prisma.postTag.deleteMany({
+      where: { postId: id },
+    });
+  }
+
   const post = await prisma.post.update({
     where: { id },
     data: {
@@ -836,6 +917,9 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
       metaTitle,
       metaDescription,
       ogImage,
+      tags: tags !== undefined ? {
+        create: tags && tags.length > 0 ? tags.map((tagId: string) => ({ tagId })) : [],
+      } : undefined,
     },
     include: {
       author: {
@@ -851,6 +935,16 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
           slug: true,
         },
       },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -860,9 +954,14 @@ router.put('/:id', validatePost, authenticateToken, handleValidationErrors, asyn
     invalidateCache.invalidateUserCaches(req.user.id);
   }
 
+  const postWithTags = {
+    ...post,
+    tags: post.tags.map((postTag: any) => postTag.tag),
+  };
+
   return res.json({
     message: 'Post updated successfully',
-    post,
+    post: postWithTags,
   });
 }));
 
