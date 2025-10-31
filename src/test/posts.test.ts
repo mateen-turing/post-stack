@@ -2781,4 +2781,236 @@ describe('Blog Post Routes', () => {
       expect(like).toBeNull();
     });
   });
+
+  describe('GET /api/posts/:slug/related - Get related posts', () => {
+    it('should return related posts that share tags with the given post', async () => {
+      // Get some tags
+      const tags = await prisma.tag.findMany({ take: 2 });
+      const tagIds = tags.map(tag => tag.id);
+
+      // Create a post with tags
+      const originalPost = await prisma.post.create({
+        data: {
+          title: 'Original Post',
+          content: '# Original Content',
+          slug: 'original-post',
+          published: true,
+          authorId: userId,
+          tags: {
+            create: tagIds.map(tagId => ({ tagId })),
+          },
+        },
+      });
+
+      // Create related posts that share the same tags
+      const relatedPost1 = await prisma.post.create({
+        data: {
+          title: 'Related Post 1',
+          content: '# Related Content 1',
+          slug: 'related-post-1',
+          published: true,
+          authorId: userId,
+          tags: {
+            create: [{ tagId: tagIds[0] }], // Shares first tag
+          },
+        },
+      });
+
+      const relatedPost2 = await prisma.post.create({
+        data: {
+          title: 'Related Post 2',
+          content: '# Related Content 2',
+          slug: 'related-post-2',
+          published: true,
+          authorId: userId,
+          tags: {
+            create: [{ tagId: tagIds[1] }], // Shares second tag
+          },
+        },
+      });
+
+      // Create a post with different tags (should not be included)
+      const unrelatedTag = await prisma.tag.findFirst({
+        where: {
+          id: {
+            notIn: tagIds,
+          },
+        },
+      });
+
+      if (unrelatedTag) {
+        await prisma.post.create({
+          data: {
+            title: 'Unrelated Post',
+            content: '# Unrelated Content',
+            slug: 'unrelated-post',
+            published: true,
+            authorId: userId,
+            tags: {
+              create: [{ tagId: unrelatedTag.id }],
+            },
+          },
+        });
+      }
+
+      const response = await fetch(`${baseUrl}/posts/original-post/related`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('posts');
+      expect(Array.isArray(data.posts)).toBe(true);
+      expect(data.posts.length).toBeGreaterThanOrEqual(2);
+
+      // Verify related posts are returned
+      const postSlugs = data.posts.map((p: any) => p.slug);
+      expect(postSlugs).toContain('related-post-1');
+      expect(postSlugs).toContain('related-post-2');
+      expect(postSlugs).not.toContain('original-post'); // Current post should not be included
+      expect(postSlugs).not.toContain('unrelated-post'); // Unrelated post should not be included
+
+      // Verify posts have proper structure
+      expect(data.posts[0]).toHaveProperty('id');
+      expect(data.posts[0]).toHaveProperty('title');
+      expect(data.posts[0]).toHaveProperty('slug');
+      expect(data.posts[0]).toHaveProperty('author');
+      expect(data.posts[0]).toHaveProperty('tags');
+      expect(data.posts[0]).toHaveProperty('likeCount');
+    });
+
+    it('should return empty array when post has no tags', async () => {
+      // Create a post without tags
+      const postWithoutTags = await prisma.post.create({
+        data: {
+          title: 'Post Without Tags',
+          content: '# Content',
+          slug: 'post-without-tags',
+          published: true,
+          authorId: userId,
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/post-without-tags/related`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('posts');
+      expect(Array.isArray(data.posts)).toBe(true);
+      expect(data.posts.length).toBe(0);
+    });
+
+    it('should return 404 when post does not exist', async () => {
+      const response = await fetch(`${baseUrl}/posts/non-existent-slug/related`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(data).toHaveProperty('error', 'Post not found');
+    });
+
+    it('should exclude unpublished posts from related posts', async () => {
+      // Get some tags
+      const tags = await prisma.tag.findMany({ take: 1 });
+      const tagId = tags[0].id;
+
+      // Create a published post with tags
+      const originalPost = await prisma.post.create({
+        data: {
+          title: 'Original Published Post',
+          content: '# Original Content',
+          slug: 'original-published-post',
+          published: true,
+          authorId: userId,
+          tags: {
+            create: [{ tagId }],
+          },
+        },
+      });
+
+      // Create a related published post
+      const relatedPublished = await prisma.post.create({
+        data: {
+          title: 'Related Published Post',
+          content: '# Related Published Content',
+          slug: 'related-published-post',
+          published: true,
+          authorId: userId,
+          tags: {
+            create: [{ tagId }],
+          },
+        },
+      });
+
+      // Create an unpublished post with the same tag (should not be included)
+      await prisma.post.create({
+        data: {
+          title: 'Related Unpublished Post',
+          content: '# Related Unpublished Content',
+          slug: 'related-unpublished-post',
+          published: false,
+          authorId: userId,
+          tags: {
+            create: [{ tagId }],
+          },
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/original-published-post/related`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts.length).toBeGreaterThanOrEqual(1);
+
+      const postSlugs = data.posts.map((p: any) => p.slug);
+      expect(postSlugs).toContain('related-published-post');
+      expect(postSlugs).not.toContain('related-unpublished-post');
+      expect(data.posts.every((p: any) => p.published === true)).toBe(true);
+    });
+
+    it('should limit related posts to 5', async () => {
+      // Get some tags
+      const tags = await prisma.tag.findMany({ take: 1 });
+      const tagId = tags[0].id;
+
+      // Create original post
+      const originalPost = await prisma.post.create({
+        data: {
+          title: 'Original Post for Limit Test',
+          content: '# Original Content',
+          slug: 'original-post-limit-test',
+          published: true,
+          authorId: userId,
+          tags: {
+            create: [{ tagId }],
+          },
+        },
+      });
+
+      const relatedPosts: any = [];
+      for (let i = 1; i <= 7; i++) {
+        const post = await prisma.post.create({
+          data: {
+            title: `Related Post ${i}`,
+            content: `# Related Content ${i}`,
+            slug: `related-post-${i}`,
+            published: true,
+            authorId: userId,
+            tags: {
+              create: [{ tagId }],
+            },
+          },
+        });
+        relatedPosts.push(post);
+      }
+
+      const response = await fetch(`${baseUrl}/posts/original-post-limit-test/related`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.posts.length).toBe(5); // Should be limited to 5
+    });
+  });
 });
