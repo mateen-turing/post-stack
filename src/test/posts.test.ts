@@ -62,6 +62,46 @@ describe('Blog Post Routes', () => {
       expect(data.posts[1].published).toBe(true);
     });
 
+    it('should return tags when fetching posts list', async () => {
+      const tags = await prisma.tag.findMany({ take: 2 });
+      const tagIds = tags.map(tag => tag.id);
+
+      // Create a post with a unique title to ensure it's found
+      const uniqueTitle = `Tagged Post ${Date.now()}`;
+      const uniqueSlug = `tagged-post-${Date.now()}`;
+      
+      const post = await prisma.post.create({
+        data: {
+          title: uniqueTitle,
+          content: '# Content',
+          slug: uniqueSlug,
+          published: true,
+          authorId: userId,
+          tags: {
+            create: tagIds.map(tagId => ({ tagId })),
+          },
+        },
+      });
+
+      // Fetch posts, optionally filter by author to ensure we find our post
+      const response = await fetch(`${baseUrl}/posts?authorId=${userId}`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('posts');
+      expect(Array.isArray(data.posts)).toBe(true);
+      
+      // Find the post we just created
+      const taggedPost = data.posts.find((p: any) => p.id === post.id || p.slug === uniqueSlug);
+      expect(taggedPost).toBeDefined();
+      expect(taggedPost.tags).toBeDefined();
+      expect(Array.isArray(taggedPost.tags)).toBe(true);
+      expect(taggedPost.tags.length).toBe(2);
+      expect(taggedPost.tags[0]).toHaveProperty('id');
+      expect(taggedPost.tags[0]).toHaveProperty('name');
+    });
+
     it('should support pagination', async () => {
       // Create multiple posts
       const posts = Array.from({ length: 15 }, (_, i) => ({
@@ -798,6 +838,35 @@ describe('Blog Post Routes', () => {
       expect(data.post.slug).toBe('draft-post');
       expect(data.post.published).toBe(false);
     });
+
+    it('should return tags when fetching post', async () => {
+      const tags = await prisma.tag.findMany({ take: 2 });
+      const tagIds = tags.map(tag => tag.id);
+
+      const post = await prisma.post.create({
+        data: {
+          title: 'Post with Tags',
+          content: '# Content',
+          slug: 'post-with-tags',
+          published: true,
+          authorId: userId,
+          tags: {
+            create: tagIds.map(tagId => ({ tagId })),
+          },
+        },
+      });
+
+      const response = await fetch(`${baseUrl}/posts/post-with-tags`);
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.post.tags).toBeDefined();
+      expect(Array.isArray(data.post.tags)).toBe(true);
+      expect(data.post.tags.length).toBe(2);
+      expect(data.post.tags[0]).toHaveProperty('id');
+      expect(data.post.tags[0]).toHaveProperty('name');
+    });
   });
 
   describe('POST /api/posts', () => {
@@ -1120,6 +1189,103 @@ describe('Blog Post Routes', () => {
       });
       expect(post?.featured).toBe(false);
     });
+
+    it('should create post with tags', async () => {
+      const tags = await prisma.tag.findMany({ take: 3 });
+      const tagIds = tags.map(tag => tag.id);
+
+      const postData = {
+        title: 'Post with Tags',
+        content: '# Content with Tags',
+        published: false,
+        tags: tagIds,
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data).toHaveProperty('message', 'Post created successfully');
+      expect(data).toHaveProperty('post');
+      expect(data.post.tags).toBeDefined();
+      expect(Array.isArray(data.post.tags)).toBe(true);
+      expect(data.post.tags.length).toBe(3);
+      expect(data.post.tags[0]).toHaveProperty('id');
+      expect(data.post.tags[0]).toHaveProperty('name');
+
+      // Verify tags were created in database
+      const post = await prisma.post.findUnique({
+        where: { slug: 'post-with-tags' },
+        include: {
+          tags: {
+            include: {
+              tag: true,
+            },
+          },
+        },
+      });
+      expect(post?.tags.length).toBe(3);
+    });
+
+    it('should validate maximum 5 tags allowed', async () => {
+      const tags = await prisma.tag.findMany({ take: 6 });
+      const tagIds = tags.map(tag => tag.id);
+
+      const postData = {
+        title: 'Post with Too Many Tags',
+        content: '# Content',
+        published: false,
+        tags: tagIds,
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'Validation failed');
+    });
+
+    it('should accept exactly 5 tags', async () => {
+      const tags = await prisma.tag.findMany({ take: 5 });
+      const tagIds = tags.map(tag => tag.id);
+
+      const postData = {
+        title: 'Post with 5 Tags',
+        content: '# Content',
+        published: false,
+        tags: tagIds,
+      };
+
+      const response = await fetch(`${baseUrl}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(postData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data.post.tags.length).toBe(5);
+    });
   });
 
   describe('PUT /api/posts/:id', () => {
@@ -1380,6 +1546,138 @@ describe('Blog Post Routes', () => {
         title: 'Updated Post',
         content: '# Updated Content',
         metaTitle: 'This is a very long meta title that exceeds the 60 character limit and should fail validation',
+      };
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', 'Validation failed');
+    });
+
+    it('should update post with tags', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Original Post',
+          content: '# Original Content',
+          slug: 'original-post',
+          published: false,
+          authorId: userId,
+        },
+      });
+
+      const tags = await prisma.tag.findMany({ take: 2 });
+      const tagIds = tags.map(tag => tag.id);
+
+      const updateData = {
+        title: 'Updated Post',
+        content: '# Updated Content',
+        tags: tagIds,
+      };
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.post.tags).toBeDefined();
+      expect(Array.isArray(data.post.tags)).toBe(true);
+      expect(data.post.tags.length).toBe(2);
+
+      // Verify tags were updated in database
+      const updatedPost = await prisma.post.findUnique({
+        where: { id: post.id },
+        include: {
+          tags: {
+            include: {
+              tag: true,
+            },
+          },
+        },
+      });
+      expect(updatedPost?.tags.length).toBe(2);
+    });
+
+    it('should update post to remove all tags', async () => {
+      const tags = await prisma.tag.findMany({ take: 2 });
+      const tagIds = tags.map(tag => tag.id);
+
+      const post = await prisma.post.create({
+        data: {
+          title: 'Post with Tags',
+          content: '# Content',
+          slug: 'post-with-tags',
+          published: false,
+          authorId: userId,
+          tags: {
+            create: tagIds.map(tagId => ({ tagId })),
+          },
+        },
+      });
+
+      const updateData = {
+        title: 'Post with Tags',
+        content: '# Content',
+        tags: [],
+      };
+
+      const response = await fetch(`${baseUrl}/posts/${post.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      const data: any = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.post.tags.length).toBe(0);
+
+      // Verify tags were removed in database
+      const updatedPost = await prisma.post.findUnique({
+        where: { id: post.id },
+        include: {
+          tags: true,
+        },
+      });
+      expect(updatedPost?.tags.length).toBe(0);
+    });
+
+    it('should validate maximum 5 tags on update', async () => {
+      const post = await prisma.post.create({
+        data: {
+          title: 'Original Post',
+          content: '# Original Content',
+          slug: 'original-post',
+          published: false,
+          authorId: userId,
+        },
+      });
+
+      const tags = await prisma.tag.findMany({ take: 6 });
+      const tagIds = tags.map(tag => tag.id);
+
+      const updateData = {
+        title: 'Updated Post',
+        content: '# Updated Content',
+        tags: tagIds,
       };
 
       const response = await fetch(`${baseUrl}/posts/${post.id}`, {

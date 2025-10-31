@@ -71,6 +71,32 @@ export const validatePost = [
     .optional({ nullable: true })
     .isURL()
     .withMessage("OG image must be a valid URL"),
+  body("tags")
+    .optional()
+    .isArray()
+    .withMessage("Tags must be an array")
+    .custom((value) => {
+      if (value && value.length > 5) {
+        throw new Error("Maximum 5 tags allowed");
+      }
+      return true;
+    })
+    .custom(async (value) => {
+      if (value && Array.isArray(value)) {
+        for (const tagId of value) {
+          if (typeof tagId !== "string") {
+            throw new Error("Each tag ID must be a string");
+          }
+          const tag = await prisma.tag.findUnique({
+            where: { id: tagId },
+          });
+          if (!tag) {
+            throw new Error(`Tag with ID ${tagId} not found`);
+          }
+        }
+      }
+      return true;
+    }),
 ];
 
 export const validateComment = [
